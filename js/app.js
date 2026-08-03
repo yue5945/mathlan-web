@@ -147,13 +147,17 @@ function idbClearImages() {
   });
 }
 
-/* 显示图片：优先用更新包下载到本机的图片，没有再按原路径加载 */
+/* 显示图片：优先用更新包下载到本机的图片，没有再按原路径加载
+   （安卓 WebView 的 file:// 环境下 blob: 地址可能加载失败，统一转成 base64 data: 地址） */
 function setImgSrc(el, path) {
   if (!path) return;
   el.src = path;
   var alt = String(path).replace(/^assets\//, '');
   idbGet('img:' + alt).then(function (b) {
-    if (b) el.src = URL.createObjectURL(b);
+    if (!b) return;
+    var rd = new FileReader();
+    rd.onload = function () { el.src = rd.result; };
+    rd.readAsDataURL(b);
   }).catch(function () {});
 }
 
