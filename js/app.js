@@ -250,6 +250,12 @@ function downloadAndApply(meta) {
           if (qData) {
             applyQuestions(qData);
             saveQCache(qData);
+            // 与电脑版一致：更新后清空本机答题进度，旧题一律不留
+            try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+            S.progress = blankProgress();
+            saveProgress();
+            S.bid = null;
+            S.bidQuestions = [];
             renderBankGrid();
           }
           saveOssMeta(size, meta && meta.lastModified ? meta.lastModified : '');
