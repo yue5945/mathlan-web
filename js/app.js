@@ -100,6 +100,105 @@ function loadQuestions(showStatus) {
   });
 }
 
+/* ---------- IndexedDB：保存更新包里的题目/答案图片 ---------- */
+function idbOpen() {
+  return new Promise(function (res, rej) {
+    var rq = indexedDB.open('mathlan-db', 1);
+    rq.onupgradeneeded = function () { rq.result.createObjectStore('kv'); };
+    rq.onsuccess = function () { res(rq.result); };
+    rq.onerror = function () { rej(rq.error); };
+  });
+}
+
+function idbGet(key) {
+  return idbOpen().then(function (db) {
+    return new Promise(function (res, rej) {
+      var rq = db.transaction('kv', 'readonly').objectStore('kv').get(key);
+      rq.onsuccess = function () { res(rq.result); };
+      rq.onerror = function () { rej(rq.error); };
+    });
+  });
+}
+
+function idbSet(key, val) {
+  return idbOpen().then(function (db) {
+    return new Promise(function (res, rej) {
+      var tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(val, key);
+      tx.oncomplete = function () { res(); };
+      tx.onerror = function () { rej(tx.error); };
+    });
+  });
+}
+
+function idbClearImages() {
+  return idbOpen().then(function (db) {
+    return new Promise(function (res, rej) {
+      var rq = db.transaction('kv', 'readonly').objectStore('kv').getAllKeys();
+      rq.onsuccess = function () {
+        var keys = rq.result.filter(function (k) { return String(k).indexOf('img:') === 0; });
+        var tx = db.transaction('kv', 'readwrite');
+        keys.forEach(function (k) { tx.objectStore('kv').delete(k); });
+        tx.oncomplete = function () { res(); };
+        tx.onerror = function () { rej(tx.error); };
+      };
+      rq.onerror = function () { rej(rq.error); };
+    });
+  });
+}
+
+/* 显示图片：优先用更新包下载到本机的图片，没有再按原路径加载 */
+function setImgSrc(el, path) {
+  if (!path) return;
+  el.src = path;
+  var alt = String(path).replace(/^assets\//, '');
+  idbGet('img:' + alt).then(function (b) {
+    if (b) el.src = URL.createObjectURL(b);
+  }).catch(function () {});
+}
+
+/* ---------- OSS 在线更新：下载 mathlan.zip 并在浏览器内解压替换题库 ---------- */
+var OSS_ZIP_URL = 'https://mathlan.oss-cn-beijing.aliyuncs.com/mathlan.zip';
+
+function fetchBinRetry(url, tries, delayMs) {
+  return fetch(url, { cache: 'no-store' }).then(function (r) {
+    if (!r.ok) throw new Error(url + ' ' + r.status);
+    return r.arrayBuffer();
+  }).catch(function (e) {
+    if (tries <= 1) throw e;
+    return new Promise(function (res) { setTimeout(res, delayMs); })
+      .then(function () { return fetchBinRetry(url, tries - 1, delayMs * 2); });
+  });
+}
+
+function ossUpdate() {
+  if (typeof JSZip === 'undefined') { toast('更新组件缺失，请检查网络后刷新'); loadQuestions(false); return; }
+  toast('正在下载更新包…', 30000);
+  fetchBinRetry(OSS_ZIP_URL + '?t=' + Date.now(), 3, 1000)
+    .then(function (buf) { return JSZip.loadAsync(buf); })
+    .then(function (zip) {
+      var jobs = [];
+      var qData = null;
+      zip.forEach(function (rel, file) {
+        if (file.dir) return;
+        if (rel === 'math_questions.json') {
+          jobs.push(file.async('string').then(function (s) { qData = JSON.parse(s); }));
+        } else if (/^(question_images|answer_images)\//.test(rel)) {
+          jobs.push(file.async('blob').then(function (b) { return idbSet('img:' + rel, b); }));
+        }
+      });
+      return idbClearImages().then(function () { return Promise.all(jobs); }).then(function () {
+        if (qData) {
+          applyQuestions(qData);
+          saveQCache(qData);
+          renderBankGrid();
+        }
+        toast('更新完成，题库已是最新 ✅');
+      });
+    })
+    .catch(function () { toast('更新失败，请检查网络后重试', 4000); });
+}
+
 function blankProgress() {
   var p = {};
   for (var u = 1; u <= 30; u++) {
@@ -284,7 +383,7 @@ function renderQuestion() {
 
   var imgWrap = $('quiz-img-wrap');
   if (q[2]) {
-    $('quiz-img').src = q[2];
+    setImgSrc($('quiz-img'), q[2]);
     imgWrap.style.display = '';
   } else {
     imgWrap.style.display = 'none';
@@ -386,7 +485,7 @@ function navQuestion(delta) {
 /* ---------- 答案遮罩 ---------- */
 function showAnswerOverlay(src, title) {
   $('answer-overlay-title').textContent = title || '答案';
-  $('answer-img').src = src;
+  setImgSrc($('answer-img'), src);
   $('answer-overlay').classList.add('show');
 }
 
@@ -435,7 +534,7 @@ function showReviewAnswer(bid, item) {
   if (img) {
     $('review-hint').style.display = 'none';
     $('review-img').style.display = '';
-    $('review-img').src = img;
+    setImgSrc($('review-img'), img);
     $('review-delete').style.display = '';
   } else {
     $('review-hint').style.display = '';
@@ -667,8 +766,8 @@ function bindEvents() {
       else if (act === 'submit-go') toast('请先选择题库开始答题');
       else if (act === 'update') {
         if (S.account === '0') { toast('该账户不支持更新功能！'); return; }
-        // 清除本机题库缓存后静默刷新，任何异常都不弹窗
-        try { localStorage.removeItem(QCACHE_KEY); location.reload(true); } catch (e) {}
+        // 从 OSS 下载最新更新包，浏览器内解压替换题库和图片，任何异常都不弹窗
+        try { ossUpdate(); } catch (e) { toast('更新失败，请稍后再试'); }
       }
       else if (act === 'upload') toast('手机版暂不支持传题，请在电脑端使用');
       else if (act === 'app' || act === 'audio' || act === 'video') toast('请在电脑端使用此功能');
