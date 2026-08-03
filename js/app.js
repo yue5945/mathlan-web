@@ -61,6 +61,45 @@ function fetchJSON(url) {
   });
 }
 
+/* ---------- 题库加载：自动重试 + 本机缓存（网络不稳定时也能用） ---------- */
+var QCACHE_KEY = 'mathlan_qcache_v1';
+
+function fetchWithRetry(url, tries, delayMs) {
+  return fetchJSON(url).catch(function (e) {
+    if (tries <= 1) throw e;
+    return new Promise(function (res) { setTimeout(res, delayMs); })
+      .then(function () { return fetchWithRetry(url, tries - 1, delayMs * 2); });
+  });
+}
+
+function saveQCache(data) {
+  try { localStorage.setItem(QCACHE_KEY, JSON.stringify(data)); } catch (e) {}
+}
+
+function loadQCache() {
+  try {
+    var s = localStorage.getItem(QCACHE_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
+}
+
+function applyQuestions(q) {
+  S.questions = q || {};
+  BANKS.forEach(function (b) { if (!S.questions[b]) S.questions[b] = []; });
+  S.questionsLoaded = true;
+}
+
+function loadQuestions(showStatus) {
+  if (showStatus) toast('题库加载中…', 15000);
+  return fetchWithRetry('assets/math_questions.json', 5, 800).then(function (q) {
+    applyQuestions(q);
+    saveQCache(q);
+    if (showStatus) toast('题库已就绪');
+  }).catch(function () {
+    if (showStatus) toast('题库加载失败，请稍后点「更新」重试', 5000);
+  });
+}
+
 function blankProgress() {
   var p = {};
   for (var u = 1; u <= 30; u++) {
@@ -225,6 +264,7 @@ function answerOf(q) {
 }
 
 function openQuiz(bid) {
+  if (!S.questionsLoaded) { toast('题库加载中，请稍候…'); loadQuestions(false); return; }
   S.bid = bid;
   var ud = ensureRemaining(S.currentUser, bid);
   S.bidQuestions = ud.remaining;   // 与桌面版一致：直接基于 remaining
@@ -627,8 +667,8 @@ function bindEvents() {
       else if (act === 'submit-go') toast('请先选择题库开始答题');
       else if (act === 'update') {
         if (S.account === '0') { toast('该账户不支持更新功能！'); return; }
-        // 静默刷新到最新版本，任何异常都不弹窗
-        try { location.reload(true); } catch (e) {}
+        // 清除本机题库缓存后静默刷新，任何异常都不弹窗
+        try { localStorage.removeItem(QCACHE_KEY); location.reload(true); } catch (e) {}
       }
       else if (act === 'upload') toast('手机版暂不支持传题，请在电脑端使用');
       else if (act === 'app' || act === 'audio' || act === 'video') toast('请在电脑端使用此功能');
@@ -661,26 +701,27 @@ function bindEvents() {
 
 /* ---------- 启动 ---------- */
 function boot() {
-  Promise.all([
-    fetchJSON('assets/math_questions.json'),
-    fetchJSON('assets/special_users.json').catch(function () {
-      return [
-        { username: '0', password: '0', expire_date: '9999/12/31' },
-        { username: 'admin', password: 'admin123', expire_date: '2025/10/26' },
-        { username: 'test', password: 'test456', expire_date: '2025/10/26' }
-      ];
-    })
-  ]).then(function (res) {
-    S.questions = res[0];
-    S.specialUsers = res[1] || [];
-    BANKS.forEach(function (b) { if (!S.questions[b]) S.questions[b] = []; });
+  fetchWithRetry('assets/special_users.json', 3, 800).catch(function () {
+    return [
+      { username: '0', password: '0', expire_date: '9999/12/31' },
+      { username: 'admin', password: 'admin123', expire_date: '2025/10/26' },
+      { username: 'test', password: 'test456', expire_date: '2025/10/26' }
+    ];
+  }).then(function (su) {
+    S.specialUsers = su || [];
+    // 有缓存先用缓存（秒开），同时后台静默刷新到最新题库
+    var cached = loadQCache();
+    if (cached) {
+      applyQuestions(cached);
+    } else {
+      S.questions = {};
+      BANKS.forEach(function (b) { S.questions[b] = []; });
+    }
     loadProgress();
     initLogin();
     bindEvents();
     startClock();
-  }).catch(function (e) {
-    document.body.innerHTML = '<p style="padding:40px;text-align:center">题库加载失败：' + e.message +
-      '<br><br>请检查 assets 资源是否完整。</p>';
+    loadQuestions(!cached);
   });
 }
 
