@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#FFF5E1">
+<title>数问阑珊 | MathLan</title>
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="数问阑珊">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- 登录页 -->
+<section id="page-login" class="page active">
+  <div class="login-wrap">
+    <img class="login-logo" src="icon-512.png" width="92" height="92" alt="数问阑珊">
+    <h1 class="login-title">数问阑珊</h1>
+    <p class="login-sub">MathLan · 数学刷题</p>
+    <div class="login-form">
+      <label class="form-label">用户名（11位数字）</label>
+      <input id="login-username" type="text" inputmode="numeric" autocomplete="username">
+      <label class="form-label">密码（6位字符）</label>
+      <input id="login-password" type="password" autocomplete="current-password">
+      <label class="form-check"><input id="login-remember" type="checkbox"> 记住密码</label>
+      <button id="login-btn" class="btn btn-primary btn-big">登 录</button>
+      <p class="login-tip">提示：字母区分大小写</p>
+      <p class="login-error" id="login-error"></p>
+    </div>
+  </div>
+</section>
+
+<!-- 主页 -->
+<section id="page-main" class="page">
+  <header class="topbar">
+    <span class="topbar-title">数问阑珊</span>
+    <span class="topbar-user" id="main-user-label">用户 1</span>
+  </header>
+
+  <div class="bank-grid" id="bank-grid"></div>
+
+  <div class="func-grid">
+    <button class="btn" data-act="user">用户ID</button>
+    <button class="btn" data-act="review">查看</button>
+    <button class="btn" data-act="help">帮助</button>
+    <button class="btn" data-act="stat-id">统计</button>
+    <button class="btn" data-act="single">单统计</button>
+    <button class="btn" data-act="multi">多统计</button>
+    <button class="btn" data-act="app">应用</button>
+    <button class="btn" data-act="audio">音频</button>
+    <button class="btn" data-act="video">视频</button>
+    <button class="btn" data-act="submit-go">提交</button>
+    <button class="btn" data-act="update">更新</button>
+    <button class="btn" data-act="upload">䷿</button>
+  </div>
+
+  <div class="clock-bar">
+    <span id="clock-now">当前时间: --:--:--</span>
+    <span id="clock-run">运行时间: 00:00:00</span>
+  </div>
+
+  <footer class="main-footer">
+    <button class="btn btn-small" id="logout-btn">退出登录</button>
+  </footer>
+</section>
+
+<!-- 答题页 -->
+<section id="page-quiz" class="page">
+  <header class="topbar">
+    <button class="btn btn-small" id="quiz-back">‹ 返回</button>
+    <span class="topbar-title" id="quiz-title">题库</span>
+    <span class="topbar-user" id="quiz-progress"></span>
+  </header>
+
+  <div class="quiz-body" id="quiz-body">
+    <div class="quiz-qtext" id="quiz-qtext"></div>
+    <div class="quiz-img-wrap" id="quiz-img-wrap">
+      <img id="quiz-img" alt="题目图片">
+    </div>
+    <div class="quiz-options" id="quiz-options"></div>
+  </div>
+
+  <div class="quiz-bar">
+    <button class="btn" id="quiz-prev">上一题</button>
+    <button class="btn btn-primary" id="quiz-submit">提交</button>
+    <button class="btn" id="quiz-next">下一题</button>
+  </div>
+</section>
+
+<!-- 查看（错题）页 -->
+<section id="page-review" class="page">
+  <header class="topbar">
+    <button class="btn btn-small" id="review-back">‹ 返回</button>
+    <span class="topbar-title">查看 · 错题</span>
+    <span class="topbar-user"></span>
+  </header>
+  <div class="bank-tabs" id="review-tabs"></div>
+  <div class="review-list" id="review-list"></div>
+  <div class="review-view" id="review-view">
+    <p class="review-hint" id="review-hint">请从上方选择题目查看答案</p>
+    <img id="review-img" alt="答案图片" style="display:none">
+    <button class="btn btn-danger btn-small" id="review-delete" style="display:none">删除该题错误记录</button>
+  </div>
+</section>
+
+<!-- 统计页 -->
+<section id="page-stats" class="page">
+  <header class="topbar">
+    <button class="btn btn-small" id="stats-back">‹ 返回</button>
+    <span class="topbar-title" id="stats-title">统计</span>
+    <span class="topbar-user"></span>
+  </header>
+  <div class="bank-tabs" id="stats-tabs" style="display:none"></div>
+  <div class="stats-body" id="stats-body"></div>
+</section>
+
+<!-- 答案图全屏遮罩 -->
+<div class="overlay" id="answer-overlay">
+  <div class="overlay-head">
+    <span id="answer-overlay-title">答案</span>
+    <button class="btn btn-small" id="answer-close">关闭</button>
+  </div>
+  <div class="overlay-body" id="answer-body">
+    <img id="answer-img" alt="答案">
+  </div>
+</div>
+
+<!-- 图片放大查看遮罩 -->
+<div class="overlay" id="zoom-overlay">
+  <div class="overlay-body overlay-zoom" id="zoom-body">
+    <img id="zoom-img" alt="放大查看">
+  </div>
+  <p class="zoom-tip">双击放大/还原 · 单指拖动 · 点击空白关闭</p>
+</div>
+
+<!-- 帮助遮罩 -->
+<div class="overlay" id="help-overlay">
+  <div class="overlay-head">
+    <span>使用帮助</span>
+    <button class="btn btn-small" id="help-close">关闭</button>
+  </div>
+  <div class="overlay-body help-body">
+    <h3>基本操作</h3>
+    <p>1. 点「用户ID」输入用户编号（1-30）<br>2. 点 A1-C3 选择题库开始答题<br>3. 选择答案后点「提交」确认；不选答案直接提交可查看答案图片</p>
+    <h3>按钮颜色</h3>
+    <p>绿色 ✓：该题库已全部答对<br>红色 ?：最近答题有错误<br>默认色：未完成</p>
+    <h3>功能说明</h3>
+    <p>· 查看：按题库浏览答错的题目与答案图，可删除错误记录<br>· 统计/单统计：输入并查看某位用户的详细统计<br>· 多统计：所有用户、所有题库的正确率与用时概览<br>· 更新：刷新到最新版本<br>· 应用/音频/视频：请在电脑端使用</p>
+    <h3>答题数据</h3>
+    <p>答题进度保存在本机，卸载或清除数据前请注意。</p>
+    <h3>开发者</h3>
+    <p>岳会建<br>邮箱：mathlan3@163.com<br>微信：mathlan3</p>
+  </div>
+</div>
+
+<!-- 通用提示 -->
+<div id="toast"></div>
+
+<script src="js/crypto.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
