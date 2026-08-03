@@ -85,7 +85,15 @@ function loadQCache() {
 
 function applyQuestions(q) {
   S.questions = q || {};
-  BANKS.forEach(function (b) { if (!S.questions[b]) S.questions[b] = []; });
+  // 统一图片路径里的反斜杠（电脑版 Windows 打包生成的路径带 \ ）
+  BANKS.forEach(function (b) {
+    var arr = S.questions[b] || [];
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i][2]) arr[i][2] = String(arr[i][2]).replace(/\\/g, '/');
+      if (arr[i][3]) arr[i][3] = String(arr[i][3]).replace(/\\/g, '/');
+    }
+    if (!S.questions[b]) S.questions[b] = [];
+  });
   S.questionsLoaded = true;
 }
 
@@ -148,11 +156,13 @@ function idbClearImages() {
 }
 
 /* 显示图片：优先用更新包下载到本机的图片，没有再按原路径加载
-   （安卓 WebView 的 file:// 环境下 blob: 地址可能加载失败，统一转成 base64 data: 地址） */
+   （电脑版题库的路径带 Windows 反斜杠，先统一成正斜杠；
+     安卓 WebView 的 file:// 环境下 blob: 地址可能加载失败，统一转成 base64 data: 地址） */
 function setImgSrc(el, path) {
   if (!path) return;
-  el.src = path;
-  var alt = String(path).replace(/^assets\//, '');
+  var norm = String(path).replace(/\\/g, '/');
+  el.src = norm;
+  var alt = norm.replace(/^assets\//, '');
   idbGet('img:' + alt).then(function (b) {
     if (!b) return;
     var rd = new FileReader();
@@ -175,32 +185,97 @@ function fetchBinRetry(url, tries, delayMs) {
   });
 }
 
+/* ---------- 版本识别：先对比 OSS 文件的大小和时间，相同就不下载 ---------- */
+var OSS_META_KEY = 'mathlan_oss_meta_v1';
+
+function saveOssMeta(size, lastModified) {
+  try {
+    localStorage.setItem(OSS_META_KEY, JSON.stringify({
+      size: size, lastModified: lastModified, localTime: Date.now()
+    }));
+  } catch (e) {}
+}
+
+function loadOssMeta() {
+  try {
+    var s = localStorage.getItem(OSS_META_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
+}
+
+function fmtTime(t) {
+  var d = new Date(t);
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function refreshUpdateTimeLabel() {
+  var el = $('update-time-label');
+  if (!el) return;
+  var m = loadOssMeta();
+  el.textContent = m ? ('题库更新于 ' + fmtTime(m.localTime)) : '';
+}
+
+/* 用极小流量（只要前1个字节）读取 OSS 文件的大小和最后修改时间 */
+function checkOssVersion() {
+  return fetch(OSS_ZIP_URL + '?t=' + Date.now(), {
+    headers: { Range: 'bytes=0-0' }, cache: 'no-store'
+  }).then(function (r) {
+    if (r.status !== 206 && !r.ok) throw new Error('meta ' + r.status);
+    var size = 0;
+    var cr = r.headers.get('Content-Range');
+    if (cr) { var mm = /\/(\d+)\s*$/.exec(cr); if (mm) size = +mm[1]; }
+    return { size: size, lastModified: r.headers.get('Last-Modified') || '' };
+  });
+}
+
+function downloadAndApply(meta) {
+  toast('发现新版本，正在下载…', 30000);
+  return fetchBinRetry(OSS_ZIP_URL + '?t=' + Date.now(), 3, 1000)
+    .then(function (buf) {
+      var size = buf.byteLength;
+      return JSZip.loadAsync(buf).then(function (zip) {
+        var jobs = [];
+        var qData = null;
+        zip.forEach(function (rel, file) {
+          if (file.dir) return;
+          rel = rel.replace(/\\/g, '/');
+          if (rel === 'math_questions.json') {
+            jobs.push(file.async('string').then(function (s) { qData = JSON.parse(s); }));
+          } else if (/^(question_images|answer_images)\//.test(rel)) {
+            jobs.push(file.async('blob').then(function (b) { return idbSet('img:' + rel, b); }));
+          }
+        });
+        return idbClearImages().then(function () { return Promise.all(jobs); }).then(function () {
+          if (qData) {
+            applyQuestions(qData);
+            saveQCache(qData);
+            renderBankGrid();
+          }
+          saveOssMeta(size, meta && meta.lastModified ? meta.lastModified : '');
+          refreshUpdateTimeLabel();
+          toast('更新完成 ✅ 题库更新于 ' + fmtTime(Date.now()), 3500);
+        });
+      });
+    });
+}
+
 function ossUpdate() {
   if (typeof JSZip === 'undefined') { toast('更新组件缺失，请检查网络后刷新'); loadQuestions(false); return; }
-  toast('正在下载更新包…', 30000);
-  fetchBinRetry(OSS_ZIP_URL + '?t=' + Date.now(), 3, 1000)
-    .then(function (buf) { return JSZip.loadAsync(buf); })
-    .then(function (zip) {
-      var jobs = [];
-      var qData = null;
-      zip.forEach(function (rel, file) {
-        if (file.dir) return;
-        if (rel === 'math_questions.json') {
-          jobs.push(file.async('string').then(function (s) { qData = JSON.parse(s); }));
-        } else if (/^(question_images|answer_images)\//.test(rel)) {
-          jobs.push(file.async('blob').then(function (b) { return idbSet('img:' + rel, b); }));
-        }
-      });
-      return idbClearImages().then(function () { return Promise.all(jobs); }).then(function () {
-        if (qData) {
-          applyQuestions(qData);
-          saveQCache(qData);
-          renderBankGrid();
-        }
-        toast('更新完成，题库已是最新 ✅');
-      });
-    })
-    .catch(function () { toast('更新失败，请检查网络后重试', 4000); });
+  toast('正在检查更新…');
+  checkOssVersion().then(function (meta) {
+    var local = loadOssMeta();
+    // OSS 文件的大小和时间与本机记录完全一致 → 已是最新，不下载
+    if (local && meta.lastModified && local.lastModified === meta.lastModified &&
+        (!meta.size || !local.size || local.size === meta.size)) {
+      toast('您的题库已是最新版 ✅', 3000);
+      return null;
+    }
+    return downloadAndApply(meta);
+  }).catch(function () {
+    // 版本识别失败时仍尝试完整下载更新
+    downloadAndApply(null).catch(function () { toast('更新失败，请检查网络后重试', 4000); });
+  });
 }
 
 function blankProgress() {
@@ -331,6 +406,7 @@ function initLogin() {
 function enterMain() {
   renderBankGrid();
   $('main-user-label').textContent = '用户 ' + S.currentUser;
+  refreshUpdateTimeLabel();
   showPage('page-main');
 }
 
