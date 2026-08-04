@@ -171,11 +171,11 @@ function setImgSrc(el, path) {
   el.src = norm;
   var alt = norm.replace(/^assets\//, '');
   idbGet('img:' + alt).then(function (b) {
-    if (!b) return;
+    if (!b) { applyAnnComposite(el, alt); return; }
     var rd = new FileReader();
-    rd.onload = function () { el.src = rd.result; };
+    rd.onload = function () { el.src = rd.result; applyAnnComposite(el, alt); };
     rd.readAsDataURL(b);
-  }).catch(function () {});
+  }).catch(function () { applyAnnComposite(el, alt); });
 }
 
 /* ---------- 批注（音频/视频/图片批注，来自 OSS 更新包的 annotations.json） ---------- */
@@ -205,8 +205,75 @@ function annsFor(imgPath) {
   var a = (S.anns || {})[norm];
   if (!a) return null;
   var aud = a.audio_annotations || [], vid = a.video_annotations || [], img = a.image_annotations || [];
-  if (!aud.length && !vid.length && !img.length) return null;
-  return { audio: aud, video: vid, image: img };
+  var txt = a.text_annotations || [], fre = a.freehand_annotations || [];
+  if (!aud.length && !vid.length && !img.length && !txt.length && !fre.length) return null;
+  return { audio: aud, video: vid, image: img, text: txt, freehand: fre };
+}
+/* 把文本/符号/手写批注直接画到图片上（与电脑端一致：坐标基于图片原始像素） */
+function drawAnns(ctx, anns) {
+  (anns.freehand || []).forEach(function (a) {
+    ctx.strokeStyle = a.color || 'red';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (a.type === 'circle' && a.center) {
+      ctx.lineWidth = a.width || 2;
+      ctx.setLineDash(a.dashed ? [5, 5] : []);
+      ctx.beginPath();
+      ctx.arc(a.center[0], a.center[1], a.radius || 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (a.type === 'line' && a.start_point && a.end_point) {
+      ctx.lineWidth = a.width || 2;
+      ctx.setLineDash(a.dashed ? [5, 5] : []);
+      ctx.beginPath();
+      ctx.moveTo(a.start_point[0], a.start_point[1]);
+      ctx.lineTo(a.end_point[0], a.end_point[1]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      var pts = a.points || [];
+      var ws = a.widths || a.dynamic_widths || [];
+      for (var i = 0; i < pts.length - 1; i++) {
+        var w1 = (ws[i] != null ? ws[i] : (a.width || 2));
+        var w2 = (ws[i + 1] != null ? ws[i + 1] : (a.width || 2));
+        ctx.lineWidth = Math.max(1, (w1 + w2) / 2);
+        ctx.beginPath();
+        ctx.moveTo(pts[i][0], pts[i][1]);
+        ctx.lineTo(pts[i + 1][0], pts[i + 1][1]);
+        ctx.stroke();
+      }
+    }
+  });
+  (anns.text || []).forEach(function (t) {
+    var size = t.font_size || 64;
+    ctx.font = (t.is_symbol ? 'bold ' : '') + size + 'px "Microsoft YaHei", "PingFang SC", sans-serif';
+    ctx.fillStyle = t.color || 'red';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t.text, t.x, t.y);
+  });
+}
+/* 图片加载完成后，若上面有文字/手写批注则合成一张新图再显示 */
+function applyAnnComposite(el, path) {
+  var anns = annsFor(path);
+  if (!anns || (!anns.text.length && !anns.freehand.length)) return;
+  var stamp = String(Date.now()) + Math.random();
+  el.dataset.annStamp = stamp;   // 防止快速翻题时旧图覆盖新图
+  var im = new Image();
+  im.onload = function () {
+    if (el.dataset.annStamp !== stamp) return;
+    try {
+      if (!im.naturalWidth) return;
+      var cv = document.createElement('canvas');
+      cv.width = im.naturalWidth;
+      cv.height = im.naturalHeight;
+      var ctx = cv.getContext('2d');
+      ctx.drawImage(im, 0, 0);
+      drawAnns(ctx, anns);
+      el.src = cv.toDataURL('image/png');
+    } catch (e) {}
+  };
+  im.src = el.src;
 }
 /* 播放/查看批注文件（更新时已把批注文件存进 IndexedDB，键与图片相同规则） */
 function playMedia(rel, kind) {
