@@ -81,6 +81,7 @@
     <div class="quiz-qtext" id="quiz-qtext"></div>
     <div class="quiz-img-wrap" id="quiz-img-wrap">
       <img id="quiz-img" alt="题目图片">
+      <div id="quiz-ann" class="ann-bar" style="display:none"></div>
     </div>
     <div class="quiz-options" id="quiz-options"></div>
   </div>
@@ -104,6 +105,7 @@
   <div class="review-view" id="review-view">
     <p class="review-hint" id="review-hint">请从上方选择题目查看答案</p>
     <img id="review-img" alt="答案图片" style="display:none">
+    <div id="review-ann" class="ann-bar" style="display:none"></div>
     <button class="btn btn-danger btn-small" id="review-delete" style="display:none">删除该题错误记录</button>
   </div>
 </section>
@@ -126,7 +128,10 @@
     <button class="btn btn-small" id="answer-close">关闭</button>
   </div>
   <div class="overlay-body" id="answer-body">
-    <img id="answer-img" alt="答案">
+    <div class="img-col">
+      <img id="answer-img" alt="答案">
+      <div id="answer-ann" class="ann-bar" style="display:none"></div>
+    </div>
   </div>
 </div>
 
@@ -135,7 +140,22 @@
   <div class="overlay-body overlay-zoom" id="zoom-body">
     <img id="zoom-img" alt="放大查看">
   </div>
-  <p class="zoom-tip">双击放大/还原 · 单指拖动 · 点击空白关闭</p>
+  <div class="zoom-ctrl">
+    <button class="btn btn-small" id="zoom-out">－ 缩小</button>
+    <button class="btn btn-small" id="zoom-in">＋ 放大</button>
+    <button class="btn btn-small" id="zoom-rotl">⟲ 左转</button>
+    <button class="btn btn-small" id="zoom-rotr">⟳ 右转</button>
+  </div>
+  <p class="zoom-tip">双击放大/还原 · 单指拖动 · 按钮缩放旋转 · 点击空白关闭</p>
+</div>
+
+<!-- 批注媒体遮罩（视频/图片批注） -->
+<div class="overlay" id="media-overlay">
+  <div class="overlay-head">
+    <span id="media-title">批注</span>
+    <button class="btn btn-small" id="media-close">关闭</button>
+  </div>
+  <div class="overlay-body" id="media-body"></div>
 </div>
 
 <!-- 帮助遮罩 -->
@@ -150,7 +170,7 @@
     <h3>按钮颜色</h3>
     <p>绿色 ✓：该题库已全部答对<br>红色 ?：最近答题有错误<br>默认色：未完成</p>
     <h3>功能说明</h3>
-    <p>· 查看：按题库浏览答错的题目与答案图，可删除错误记录<br>· 统计/单统计：输入并查看某位用户的详细统计<br>· 多统计：所有用户、所有题库的正确率与用时概览<br>· 更新：刷新到最新版本<br>· 应用/音频/视频：请在电脑端使用</p>
+    <p>· 查看：按题库浏览答错的题目与答案图，可删除错误记录<br>· 统计/单统计：输入并查看某位用户的详细统计<br>· 多统计：所有用户、所有题库的正确率与用时概览<br>· 更新：刷新到最新版本<br>· 批注：题目/答案图片下方出现 ▶ 按钮时，点击可听音频批注、看批注视频/图片<br>· 图片放大：点击图片后可用按钮缩放、旋转<br>· 应用/音频/视频：请在电脑端使用</p>
     <h3>答题数据</h3>
     <p>答题进度保存在本机，卸载或清除数据前请注意。</p>
     <h3>开发者</h3>
