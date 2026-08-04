@@ -121,7 +121,7 @@ function loadQuestions(showStatus) {
     if (showStatus) toast('题库已就绪');
     return Promise.resolve();
   }
-  if (showStatus) toast('题库加载中…', 15000);
+  if (showStatus) toast('请点击更新后开始使用', 4500);
   return fetchWithRetry('assets/math_questions.json', 5, 800).then(function (q) {
     applyQuestions(q);
     saveQCache(q);
@@ -534,8 +534,8 @@ function loadProgress() {
     if (raw) {
       var saved = JSON.parse(raw);
       var base = blankProgress();
-      for (var u in base) {
-        if (!saved[u]) continue;
+      for (var u in saved) {
+        if (!base[u]) { base[u] = saved[u]; continue; }   // 自由ID用户直接保留
         for (var i = 0; i < BANKS.length; i++) {
           var b = BANKS[i];
           if (saved[u][b]) base[u][b] = saved[u][b];
@@ -552,7 +552,13 @@ function saveProgress() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(S.progress)); } catch (e) {}
 }
 
-function userData(uid, bid) { return S.progress[uid][bid]; }
+/* 任意用户ID都可用：不存在时按需创建 */
+function userData(uid, bid) {
+  uid = String(uid);
+  if (!S.progress[uid]) S.progress[uid] = {};
+  if (!S.progress[uid][bid]) S.progress[uid][bid] = { remaining: [], history: [] };
+  return S.progress[uid][bid];
+}
 
 /* remaining 为空时从原始题库重新装满（与桌面版一致） */
 function ensureRemaining(uid, bid) {
@@ -613,6 +619,11 @@ function initLogin() {
         $('login-password').value = cfg.password || '';
         $('login-remember').checked = true;
       }
+    } else {
+      // 第一次使用：默认填入 0 / 0（用户自己登录过以后就保留用户自己的）
+      $('login-username').value = '0';
+      $('login-password').value = '0';
+      $('login-remember').checked = true;
     }
   } catch (e) {}
 
@@ -996,6 +1007,316 @@ function openMultiStats() {
   showPage('page-stats');
 }
 
+/* ---------- 打开「算算」网页（安卓 APP 由外壳接管跳转到系统浏览器） ---------- */
+function openSuansuan() {
+  try {
+    var a = document.createElement('a');
+    a.href = 'https://yue5945.github.io/suansuan/';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (e) { toast('打开失败，请稍后再试'); }
+}
+
+/* ---------- 统计（统一页：总览 + 明细 + 分析建议 + 全员概览 + 导出PDF） ---------- */
+function pct(x) { return (x * 100).toFixed(1) + '%'; }
+
+function collectUserStats(uid) {
+  var per = [], total = 0, correct = 0, time = 0;
+  BANKS.forEach(function (bid) {
+    var h = userData(uid, bid).history;
+    if (!h.length) return;
+    var c = 0, t = 0;
+    h.forEach(function (r) { if (r.correct) c++; t += r.duration; });
+    per.push({ bid: bid, total: h.length, correct: c, time: t });
+    total += h.length; correct += c; time += t;
+  });
+  return { per: per, total: total, correct: correct, time: time };
+}
+
+function countWrongRecords(uid) {
+  var seen = {}, n = 0;
+  BANKS.forEach(function (bid) {
+    userData(uid, bid).history.forEach(function (h, i) {
+      if (h.correct) return;
+      var qt = h.question || '';
+      var qid = bid + ':' + (qt.indexOf(':') >= 0 ? qt.split(':')[0] : ('题目' + (i + 1)));
+      if (!seen[qid]) { seen[qid] = 1; n++; }
+    });
+  });
+  return n;
+}
+
+/* 根据数据生成分析与学习策略 */
+function statsAdvice(st, uid) {
+  var tips = [];
+  if (!st.total) { tips.push('还没有答题记录，先选择题库开始答题吧。'); return tips; }
+  var rate = st.correct / st.total;
+  if (rate >= 0.9) tips.push('整体正确率 ' + pct(rate) + '，掌握得很好，可以加快节奏或挑战更多题库。');
+  else if (rate >= 0.7) tips.push('整体正确率 ' + pct(rate) + '，基础扎实，重点巩固薄弱题库即可。');
+  else tips.push('整体正确率 ' + pct(rate) + '，建议先放慢速度，复习错题后再刷新题。');
+  if (st.per.length) {
+    var weak = st.per.slice().sort(function (a, b) { return a.correct / a.total - b.correct / b.total; })[0];
+    var wr = weak.correct / weak.total;
+    if (wr < 0.8) tips.push('题库 ' + weak.bid + ' 正确率最低（' + pct(wr) + '），建议优先重练本题库，并到「错题本」复习对应错题。');
+    var slow = st.per.slice().sort(function (a, b) { return b.time / b.total - a.time / a.total; })[0];
+    var avg = slow.time / slow.total;
+    if (avg > 60) tips.push('题库 ' + slow.bid + ' 平均用时 ' + avg.toFixed(0) + ' 秒偏长，注意总结题型套路、提升做题速度。');
+  }
+  var wrongs = countWrongRecords(uid);
+  if (wrongs > 0) tips.push('当前共有 ' + wrongs + ' 道错题，建议今天先过一遍「错题本」再刷新题。');
+  return tips;
+}
+
+function statCard(label, val) {
+  var d = el('div', 'stat-card');
+  d.appendChild(el('div', 'stat-card-val', String(val)));
+  d.appendChild(el('div', 'stat-card-label', label));
+  return d;
+}
+
+function openStats() {
+  var uid = S.currentUser;
+  $('stats-title').textContent = '统计 · 用户' + uid;
+  var body = $('stats-body');
+  body.innerHTML = '';
+  var st = collectUserStats(uid);
+
+  var cards = el('div', 'stat-cards');
+  cards.appendChild(statCard('总答题', st.total));
+  cards.appendChild(statCard('正确率', st.total ? pct(st.correct / st.total) : '--'));
+  cards.appendChild(statCard('平均用时', st.total ? (st.time / st.total).toFixed(1) + '秒' : '--'));
+  cards.appendChild(statCard('总用时', (st.time / 60).toFixed(1) + '分'));
+  body.appendChild(cards);
+
+  if (st.per.length) {
+    var sec1 = el('div', 'stats-sec');
+    sec1.appendChild(el('h3', '', '各题库明细'));
+    sec1.appendChild(statsTable(['题库', '答题数', '正确数', '正确率', '平均用时(秒)'],
+      st.per.map(function (p) { return [p.bid, p.total, p.correct, pct(p.correct / p.total), (p.time / p.total).toFixed(1)]; })));
+    body.appendChild(sec1);
+  }
+
+  var sec2 = el('div', 'stats-sec');
+  sec2.appendChild(el('h3', '', '分析与建议'));
+  statsAdvice(st, uid).forEach(function (t) { sec2.appendChild(el('p', 'advice', '· ' + t)); });
+  body.appendChild(sec2);
+
+  // 全部用户概览（当前用户置顶）
+  var uids = [String(uid)];
+  Object.keys(S.progress).forEach(function (u) { if (u !== String(uid)) uids.push(u); });
+  var rows = [];
+  uids.forEach(function (u) {
+    var s2 = collectUserStats(u);
+    if (!s2.total) return;
+    rows.push([u === String(uid) ? u + '（当前）' : u, s2.total, s2.correct, pct(s2.correct / s2.total), (s2.time / s2.total).toFixed(1)]);
+  });
+  if (rows.length) {
+    var sec3 = el('div', 'stats-sec');
+    sec3.appendChild(el('h3', '', '全部用户概览'));
+    sec3.appendChild(statsTable(['用户', '答题数', '正确数', '正确率', '平均用时(秒)'], rows));
+    body.appendChild(sec3);
+  }
+  showPage('page-stats');
+}
+
+/* ---------- 错题本（汇总全部题库的错题，可导出PDF） ---------- */
+function collectWrongRecords() {
+  var list = [], seen = {};
+  BANKS.forEach(function (bid) {
+    userData(S.currentUser, bid).history.forEach(function (h, i) {
+      if (h.correct) return;
+      var qt = h.question || '';
+      var qid = qt.indexOf(':') >= 0 ? qt.split(':')[0] : ('题目' + (i + 1));
+      var key = bid + ':' + qid;
+      if (seen[key]) return;
+      seen[key] = 1;
+      list.push({ bid: bid, qid: qid, record: h });
+    });
+  });
+  return list;
+}
+
+function openWrongbook() {
+  var list = collectWrongRecords();
+  $('wrongbook-count').textContent = list.length ? list.length + ' 道' : '';
+  var box = $('wrong-list');
+  box.innerHTML = '';
+  if (!list.length) box.appendChild(el('p', 'review-empty', '太棒了，当前没有错题！'));
+  list.forEach(function (item) {
+    var row = el('div', 'review-item');
+    row.appendChild(el('span', '', item.bid + ' · ' + item.qid));
+    row.appendChild(el('span', '', '用时 ' + item.record.duration + ' 秒'));
+    row.addEventListener('click', function () {
+      var rows = box.querySelectorAll('.review-item');
+      for (var i = 0; i < rows.length; i++) rows[i].classList.remove('on');
+      row.classList.add('on');
+      var img = item.record.answer_image || '';
+      if (img) {
+        $('wrong-hint').style.display = 'none';
+        $('wrong-img').style.display = '';
+        setImgSrc($('wrong-img'), img);
+        renderAnnBar($('wrong-ann'), img);
+      } else {
+        $('wrong-hint').style.display = '';
+        $('wrong-hint').textContent = '该题目没有答案图片';
+        $('wrong-img').style.display = 'none';
+        renderAnnBar($('wrong-ann'), '');
+      }
+    });
+    box.appendChild(row);
+  });
+  $('wrong-hint').style.display = list.length ? '' : 'none';
+  $('wrong-hint').textContent = '点击上方错题查看答案图片';
+  $('wrong-img').style.display = 'none';
+  renderAnnBar($('wrong-ann'), '');
+  showPage('page-wrongbook');
+}
+
+/* ---------- PDF 生成（统计报告 / 错题本，可保存可转发微信） ---------- */
+/* 取图片地址：优先本机更新包，并把文字/手写批注画上去 */
+function getCompositedDataURL(path) {
+  return new Promise(function (res) {
+    var norm = String(path).replace(/\\/g, '/');
+    var alt = norm.replace(/^assets\//, '');
+    idbGet('img:' + alt).then(function (b) {
+      if (!b) { finish(norm); return; }
+      var rd = new FileReader();
+      rd.onload = function () { finish(rd.result); };
+      rd.readAsDataURL(b);
+    }).catch(function () { finish(norm); });
+    function finish(src) {
+      var anns = annsFor(alt);
+      if (!anns || (!anns.text.length && !anns.freehand.length)) { res(src); return; }
+      var im = new Image();
+      im.onload = function () {
+        try {
+          var cv = document.createElement('canvas');
+          cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+          var ctx = cv.getContext('2d');
+          ctx.drawImage(im, 0, 0);
+          drawAnns(ctx, anns);
+          res(cv.toDataURL('image/png'));
+        } catch (e) { res(src); }
+      };
+      im.onerror = function () { res(src); };
+      im.src = src;
+    }
+  });
+}
+
+/* 保存/分享：浏览器优先调系统分享（可转发微信），否则走下载（安卓 APP 由外壳保存到「下载」） */
+function sharePDF(blob, filename) {
+  try {
+    var file = new File([blob], filename, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: filename }).catch(function () {});
+      return;
+    }
+  } catch (e) {}
+  var rd = new FileReader();
+  rd.onload = function () {
+    // data: 地址附加文件名参数，便于安卓外壳识别保存
+    var url = rd.result.replace('data:application/pdf',
+      'data:application/pdf;filename=' + encodeURIComponent(filename));
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast('PDF 已生成，可在「下载」文件夹查看', 3200);
+  };
+  rd.readAsDataURL(blob);
+}
+
+/* 把一段排版好的内容（隐藏容器内）渲染成多页 PDF */
+function exportDomToPDF(dom, filename) {
+  if (!window.jspdf || !window.html2canvas) { toast('PDF 组件未加载，请检查网络后刷新'); return; }
+  toast('正在生成PDF…', 30000);
+  var holder = $('pdf-holder');
+  holder.innerHTML = '';
+  holder.appendChild(dom);
+  html2canvas(dom, { scale: 2, backgroundColor: '#FFF5E1', logging: false }).then(function (canvas) {
+    holder.innerHTML = '';
+    var pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
+    var margin = 10, imgW = 190;
+    var pxPerMm = canvas.width / imgW;
+    var pagePxH = Math.floor(277 * pxPerMm);
+    var y = 0, page = 0;
+    while (y < canvas.height) {
+      var h = Math.min(pagePxH, canvas.height - y);
+      var pc = document.createElement('canvas');
+      pc.width = canvas.width; pc.height = h;
+      var ctx = pc.getContext('2d');
+      ctx.fillStyle = '#FFF5E1';
+      ctx.fillRect(0, 0, pc.width, pc.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+      if (page > 0) pdf.addPage();
+      pdf.addImage(pc.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, imgW, h / pxPerMm);
+      y += h; page++;
+    }
+    sharePDF(pdf.output('blob'), filename);
+  }).catch(function () { holder.innerHTML = ''; toast('PDF 生成失败，请重试'); });
+}
+
+function exportStatsPDF() {
+  var uid = S.currentUser;
+  var st = collectUserStats(uid);
+  var rep = el('div', 'pdf-report');
+  rep.appendChild(el('h1', '', '数问阑珊 · 学习统计报告'));
+  rep.appendChild(el('p', 'pdf-sub', '用户 ' + uid + ' · 生成时间 ' + fmtTime(Date.now())));
+  rep.appendChild(el('p', 'pdf-line', '总答题 ' + st.total + ' 道 · 正确 ' + st.correct + ' 道 · 正确率 ' +
+    (st.total ? pct(st.correct / st.total) : '--') + ' · 平均用时 ' + (st.total ? (st.time / st.total).toFixed(1) + ' 秒' : '--') +
+    ' · 总用时 ' + (st.time / 60).toFixed(1) + ' 分钟'));
+  if (st.per.length) {
+    rep.appendChild(el('h2', '', '各题库明细'));
+    rep.appendChild(statsTable(['题库', '答题数', '正确数', '正确率', '平均用时(秒)'],
+      st.per.map(function (p) { return [p.bid, p.total, p.correct, pct(p.correct / p.total), (p.time / p.total).toFixed(1)]; })));
+  }
+  rep.appendChild(el('h2', '', '分析与建议'));
+  statsAdvice(st, uid).forEach(function (t) { rep.appendChild(el('p', 'pdf-line', '· ' + t)); });
+  rep.appendChild(el('p', 'pdf-foot', '数问阑珊 MathLan · 开发者微信：mathlan3'));
+  exportDomToPDF(rep, '数问阑珊-统计报告-用户' + uid + '.pdf');
+}
+
+function exportWrongbookPDF() {
+  var list = collectWrongRecords();
+  if (!list.length) { toast('当前没有错题，无需导出'); return; }
+  if (!window.jspdf || !window.html2canvas) { toast('PDF 组件未加载，请检查网络后刷新'); return; }
+  toast('正在整理错题和图片…', 30000);
+  var rep = el('div', 'pdf-report');
+  rep.appendChild(el('h1', '', '数问阑珊 · 错题本'));
+  rep.appendChild(el('p', 'pdf-sub', '用户 ' + S.currentUser + ' · 共 ' + list.length + ' 道错题 · 生成时间 ' + fmtTime(Date.now())));
+  var chain = Promise.resolve();
+  list.forEach(function (item, idx) {
+    chain = chain.then(function () {
+      var sec = el('div', 'pdf-wrong');
+      sec.appendChild(el('h2', '', (idx + 1) + '. 题库 ' + item.bid + ' · ' + item.qid + '（用时 ' + item.record.duration + ' 秒）'));
+      rep.appendChild(sec);
+      var imgPath = item.record.answer_image || '';
+      if (!imgPath) { sec.appendChild(el('p', 'pdf-line', '（无答案图片）')); return null; }
+      return getCompositedDataURL(imgPath).then(function (url) {
+        if (!url) { sec.appendChild(el('p', 'pdf-line', '（图片不在本机，请先点「更新」）')); return null; }
+        var im = el('img', 'pdf-img');
+        im.src = url;
+        sec.appendChild(im);
+        return new Promise(function (res) {
+          if (im.complete && im.naturalWidth) { res(); return; }
+          im.onload = function () { res(); };
+          im.onerror = function () { res(); };
+        });
+      });
+    });
+  });
+  chain.then(function () {
+    rep.appendChild(el('p', 'pdf-foot', '数问阑珊 MathLan · 开发者微信：mathlan3'));
+    exportDomToPDF(rep, '数问阑珊-错题本-用户' + S.currentUser + '.pdf');
+  });
+}
+
 /* ---------- 图片放大（双击/按钮缩放、单指拖动、按钮旋转） ---------- */
 function openZoom(src) {
   var img = $('zoom-img');
@@ -1123,32 +1444,27 @@ function bindEvents() {
     btns[i].addEventListener('click', function () {
       var act = this.dataset.act;
       if (act === 'user') {
-        askInput('请输入用户ID（1-30）', S.currentUser, function (v) {
+        askInput('请输入用户ID（可自由设置，不限数量）', S.currentUser, function (v) {
           v = (v || '').trim();
-          if (/^\d+$/.test(v) && +v >= 1 && +v <= 30) {
+          if (v) {
             S.currentUser = v;
             $('main-user-label').textContent = '用户 ' + v;
             renderBankGrid();
             toast('用户' + v + '已登录');
-          } else toast('无效的用户ID（请输入1-30之间的数字）');
-        });
-      } else if (act === 'stat-id') {
-        askInput('请输入要统计的用户序号（1-30）', S.statId || S.currentUser, function (s) {
-          S.statId = (s || '').trim();
-          if (S.statId) toast('统计对象：用户 ' + S.statId);
+          } else toast('用户ID不能为空');
         });
       } else if (act === 'review') openReview();
-      else if (act === 'single') openSingleStats();
-      else if (act === 'multi') openMultiStats();
+      else if (act === 'stats') openStats();
+      else if (act === 'wrongbook') openWrongbook();
       else if (act === 'help') $('help-overlay').classList.add('show');
       else if (act === 'submit-go') toast('请先选择题库开始答题');
       else if (act === 'update') {
-        if (S.account === '0') { toast('该账户不支持更新功能！'); return; }
+        if (S.account === '0') { toast('该账户不支持更新功能，详询微信：mathlan3', 3500); return; }
         // 从 OSS 下载最新更新包，浏览器内解压替换题库和图片，任何异常都不弹窗
         try { ossUpdate(); } catch (e) { toast('更新失败，请稍后再试'); }
       }
-      else if (act === 'upload') toast('手机版暂不支持传题，请在电脑端使用');
-      else if (act === 'app' || act === 'audio' || act === 'video') toast('请在电脑端使用此功能');
+      else if (act === 'suansuan') openSuansuan();
+      else if (act === 'app') toast('请在电脑端使用此功能');
     });
   }
 
@@ -1185,6 +1501,24 @@ function bindEvents() {
   $('input-field').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') closeInput(true);
   });
+
+  // 统计页
+  $('stats-switch').addEventListener('click', function () {
+    askInput('请输入要统计的用户ID', S.currentUser, function (v) {
+      v = (v || '').trim();
+      if (!v) return;
+      S.currentUser = v;
+      $('main-user-label').textContent = '用户 ' + v;
+      renderBankGrid();
+      openStats();
+    });
+  });
+  $('stats-export').addEventListener('click', exportStatsPDF);
+
+  // 错题本页
+  $('wrongbook-back').addEventListener('click', function () { renderBankGrid(); enterMain(); });
+  $('wrongbook-export').addEventListener('click', exportWrongbookPDF);
+  $('wrong-img').addEventListener('click', function () { openZoom(this.src); });
 }
 
 /* ---------- 启动 ---------- */
