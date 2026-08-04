@@ -264,3 +264,10 @@ img { user-select: none; -webkit-user-drag: none; }
 .pdf-img { max-width: 100%; border: 1px solid #d8cdbb; border-radius: 8px; background: #fff; margin-top: 6px; }
 .pdf-foot { font-size: 12px; opacity: .6; margin-top: 24px; text-align: center; }
 .pdf-wrong { margin-bottom: 14px; }
+
+/* 批注遮罩在上时，放大页仍要盖过它（批注图点开直接缩放旋转） */
+#zoom-overlay { z-index: 55; }
+
+/* 播放条拖动手柄与自由悬浮模式 */
+.audio-grip { cursor: grab; color: rgba(255, 255, 255, .85); padding: 0 4px; touch-action: none; user-select: none; font-size: 15px; }
+#audio-bar.floating { left: 0; right: auto; bottom: auto; top: 100px; transform: none; }
