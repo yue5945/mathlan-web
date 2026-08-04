@@ -47,15 +47,12 @@
     <button class="btn" data-act="user">用户ID</button>
     <button class="btn" data-act="review">查看</button>
     <button class="btn" data-act="help">帮助</button>
-    <button class="btn" data-act="stat-id">统计</button>
-    <button class="btn" data-act="single">单统计</button>
-    <button class="btn" data-act="multi">多统计</button>
-    <button class="btn" data-act="app">应用</button>
-    <button class="btn" data-act="audio">音频</button>
-    <button class="btn" data-act="video">视频</button>
     <button class="btn" data-act="submit-go">提交</button>
     <button class="btn" data-act="update">更新</button>
-    <button class="btn" data-act="upload">䷿</button>
+    <button class="btn" data-act="suansuan">䷿</button>
+    <button class="btn" data-act="stats">统计</button>
+    <button class="btn" data-act="app">应用</button>
+    <button class="btn" data-act="wrongbook">错题本</button>
   </div>
 
   <div class="clock-bar">
@@ -117,8 +114,30 @@
     <span class="topbar-title" id="stats-title">统计</span>
     <span class="topbar-user"></span>
   </header>
+  <div class="page-toolbar">
+    <button class="btn btn-small" id="stats-switch">切换用户</button>
+    <button class="btn btn-small btn-primary" id="stats-export">导出PDF</button>
+  </div>
   <div class="bank-tabs" id="stats-tabs" style="display:none"></div>
   <div class="stats-body" id="stats-body"></div>
+</section>
+
+<!-- 错题本页 -->
+<section id="page-wrongbook" class="page">
+  <header class="topbar">
+    <button class="btn btn-small" id="wrongbook-back">‹ 返回</button>
+    <span class="topbar-title">错题本</span>
+    <span class="topbar-user" id="wrongbook-count"></span>
+  </header>
+  <div class="page-toolbar">
+    <button class="btn btn-small btn-primary" id="wrongbook-export">导出PDF</button>
+  </div>
+  <div class="wrong-list" id="wrong-list"></div>
+  <div class="review-view" id="wrong-view">
+    <p class="review-hint" id="wrong-hint">点击上方错题查看答案图片</p>
+    <img id="wrong-img" alt="答案图片" style="display:none">
+    <div id="wrong-ann" class="ann-bar" style="display:none"></div>
+  </div>
 </section>
 
 <!-- 答案图全屏遮罩 -->
@@ -170,7 +189,7 @@
     <h3>按钮颜色</h3>
     <p>绿色 ✓：该题库已全部答对<br>红色 ?：最近答题有错误<br>默认色：未完成</p>
     <h3>功能说明</h3>
-    <p>· 查看：按题库浏览答错的题目与答案图，可删除错误记录<br>· 统计/单统计：输入并查看某位用户的详细统计<br>· 多统计：所有用户、所有题库的正确率与用时概览<br>· 更新：刷新到最新版本<br>· 批注：题目/答案图片下方出现 ▶ 按钮时，点击可听音频批注、看批注视频/图片<br>· 图片放大：点击图片后可用按钮缩放、旋转<br>· 应用/音频/视频：请在电脑端使用</p>
+    <p>· 查看：按题库浏览答错的题目与答案图，可删除错误记录<br>· 统计：答题总览、各题库明细、分析与学习建议，可导出PDF保存/转发<br>· 错题本：汇总所有题库的错题与答案图，可导出PDF保存/转发<br>· 更新：刷新到最新题库<br>· ䷿：打开「算算」网页<br>· 批注：题目/答案图片下方出现 ▶ 按钮时，点击可听音频批注、看批注视频/图片<br>· 图片放大：点击图片后双指捏合缩放，也可用按钮缩放、旋转<br>· 应用：请在电脑端使用</p>
     <h3>答题数据</h3>
     <p>答题进度保存在本机，卸载或清除数据前请注意。</p>
     <h3>开发者</h3>
@@ -201,8 +220,13 @@
 <!-- 通用提示 -->
 <div id="toast"></div>
 
+<!-- PDF 报告离屏渲染容器 -->
+<div id="pdf-holder"></div>
+
 <script src="js/crypto.js"></script>
 <script src="js/jszip.min.js"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/jspdf.umd.min.js"></script>
+<script src="js/html2canvas.min.js"></script>
+<script src="js/app.js?v=10"></script>
 </body>
 </html>
