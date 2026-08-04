@@ -1206,46 +1206,137 @@ function openWrongbook() {
 /* ---------- AI 分析及建议（DeepSeek，错题本） ---------- */
 /* Key 以 base64 存放（公开仓库安全扫描要求），运行时解码使用 */
 var DEEPSEEK_KEY = atob('c2stNGNmOGRmMDljOTAyNDY0MzhkNzUzYWM0ZjBhMmViMTg=');
+/* DeepSeek 官方接口只收文字，不能直接读图；先用 Tesseract 把每道错题的
+   题目图/答案图识别成文字，再交给 AI 逐题分析知识点。
+   轻量识别数据放在 GitHub Pages，安卓/网页通用，浏览器会自动缓存。 */
+var TESS_LANG_PATH = 'https://yue5945.github.io/mathlan-web/tessdata';
+var AI_OCR_MAX = 15;        // 单次最多分析 15 道错题（太多会很慢）
+var AI_OCR_TIMEOUT = 45000; // 单张图识别最长 45 秒
+
+/* 把任意图片来源统一转成 data: 地址（识别引擎在安卓 file:// 下读不了相对路径） */
+function ensureDataURL(src) {
+  return new Promise(function (res) {
+    if (!src) { res(''); return; }
+    if (String(src).indexOf('data:') === 0) { res(src); return; }
+    var im = new Image();
+    im.onload = function () {
+      try {
+        var cv = document.createElement('canvas');
+        cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+        cv.getContext('2d').drawImage(im, 0, 0);
+        res(cv.toDataURL('image/jpeg', 0.92));
+      } catch (e) { res(''); }
+    };
+    im.onerror = function () { res(''); };
+    im.src = src;
+  });
+}
+
+/* 识别一道错题的题目图和答案图，返回文字 */
+function ocrOneQuestion(worker, item) {
+  var jobs = [];
+  if (item.qimg) jobs.push(getCompositedDataURL(item.qimg).then(ensureDataURL));
+  if (item.aimg) jobs.push(getCompositedDataURL(item.aimg).then(ensureDataURL));
+  if (!jobs.length) return Promise.resolve({ q: '', a: '' });
+  return Promise.all(jobs).then(function (srcs) {
+    var out = { q: '', a: '' };
+    var seq = Promise.resolve();
+    srcs.forEach(function (src, i) {
+      seq = seq.then(function () {
+        if (!src) return;
+        var job = worker.recognize(src).then(function (r) {
+          var t = (r && r.data && r.data.text ? r.data.text : '').replace(/\s+/g, ' ').trim();
+          if (item.qimg && i === 0) out.q = t; else out.a = t;
+        });
+        // 单张图超时保护：超时就跳过这张图，不拖垮整体
+        return Promise.race([job, new Promise(function (res) { setTimeout(res, AI_OCR_TIMEOUT); })]);
+      });
+    });
+    return seq.then(function () { return out; });
+  });
+}
 
 function aiAnalyzeWrongbook() {
   var box = $('wrong-ai');
   var list = collectWrongRecords();
   box.style.display = '';
   if (!list.length) { box.textContent = '当前没有错题，全部掌握得很好，无需分析！'; return; }
-  box.textContent = 'AI 正在分析错题，请稍候…（约10-20秒）';
+  if (!window.Tesseract) { box.textContent = '图片识别组件未加载，请检查网络后刷新页面再试。'; return; }
 
-  // 汇总错题信息供 AI 参考
-  var perBank = {};
-  list.forEach(function (it) { perBank[it.bid] = (perBank[it.bid] || 0) + 1; });
-  var details = list.slice(0, 30).map(function (it) {
-    var qt = (it.record.question || '').replace(/\s+/g, ' ').slice(0, 40);
-    return '题库' + it.bid + '「' + qt + '」用时' + it.record.duration + '秒';
-  }).join('；');
-  var st = collectUserStats(S.currentUser);
-  var prompt = '一位学生正在用数学刷题软件学习。他的数据如下：\n' +
-    '总答题 ' + st.total + ' 道，整体正确率 ' + (st.total ? (st.correct / st.total * 100).toFixed(1) + '%' : '暂无') + '。\n' +
-    '当前共有错题 ' + list.length + ' 道，分布：' +
-    Object.keys(perBank).map(function (b) { return b + '题库' + perBank[b] + '道'; }).join('，') + '。\n' +
-    '部分错题明细：' + details + '\n' +
-    '请用亲切简明的语言（250字以内）分两点回答：1.分析这位学生的薄弱环节；2.给出具体的复习策略和建议。';
+  // 为每道错题找回题目图和答案图
+  var items = [];
+  list.forEach(function (it) {
+    var row = null, qs = S.questions[it.bid] || [];
+    for (var i = 0; i < qs.length; i++) {
+      if (qs[i][0] === it.record.question) { row = qs[i]; break; }
+    }
+    items.push({
+      bid: it.bid, qid: it.qid,
+      qimg: row ? row[2] : '',
+      aimg: (row && row[3]) || it.record.answer_image || ''
+    });
+  });
+  var totalAll = items.length;
+  var over = totalAll > AI_OCR_MAX;
+  if (over) items = items.slice(0, AI_OCR_MAX);
 
-  fetch('https://api.deepseek.com/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 600,
-      temperature: 0.7
-    })
-  }).then(function (r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }).then(function (d) {
-    var text = d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
-    box.textContent = text || 'AI 没有返回内容，请稍后再试。';
+  box.textContent = '首次使用正在下载图片识别数据（约4MB，以后不用再下）…';
+
+  var worker = null;
+  Tesseract.createWorker(['chi_sim', 'eng'], 1, { langPath: TESS_LANG_PATH }).then(function (w) {
+    worker = w;
+    var results = [];
+    var seq = Promise.resolve();
+    items.forEach(function (item, i) {
+      seq = seq.then(function () {
+        box.textContent = '正在识别错题图片 ' + (i + 1) + '/' + items.length +
+          '（' + item.bid + ' · ' + item.qid + '）…';
+        return ocrOneQuestion(worker, item).then(function (r) {
+          results.push({ item: item, text: r });
+        });
+      });
+    });
+    return seq.then(function () { return results; });
+  }).then(function (results) {
+    box.textContent = '图片识别完成，AI 正在逐题分析知识点…';
+    var blocks = results.map(function (r, i) {
+      var q = (r.text.q || '').slice(0, 300);
+      var a = (r.text.a || '').slice(0, 300);
+      var body = '';
+      if (q) body += '题目内容：' + q + '。';
+      if (a) body += '答案/解析内容：' + a + '。';
+      if (!body) body = '（该题图片文字识别失败）';
+      return '第' + (i + 1) + '题（' + r.item.bid + '题库）：' + body;
+    });
+    var prompt = '你是一位经验丰富的数学老师。下面是一位学生做错的题目，内容由图片识别得到，' +
+      '可能有少量错字或公式不完整，请结合数学常识判断。\n\n' + blocks.join('\n') +
+      '\n\n请严格按以下三部分用中文回答：\n' +
+      '一、逐题分析：每道题一行，格式为「第n题：考查知识点（要具体，如：立体几何—正三棱柱体积计算）；学生可能的易错点」。' +
+      '若某题识别失败无法判断，就写「第n题：图片内容无法识别」。\n' +
+      '二、归纳总结：把这些错题考查的知识点归类，指出该生最主要的2到3个薄弱模块。\n' +
+      '三、学习建议：针对每个薄弱模块给出具体可操作的复习建议（练什么类型的题、注意什么方法步骤）。\n' +
+      '语气亲切鼓励，总字数700字以内。';
+    return fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 1500,
+        temperature: 0.5
+      })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (d) {
+      var text = d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
+      box.textContent = (over ? '（错题较多，本次分析前 ' + AI_OCR_MAX + ' 道）\n\n' : '') +
+        (text || 'AI 没有返回内容，请稍后再试。');
+    });
   }).catch(function () {
     box.textContent = 'AI 分析失败，请检查网络后重试。';
+  }).then(function () {
+    if (worker) worker.terminate();
   });
 }
 
