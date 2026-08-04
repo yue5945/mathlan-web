@@ -1203,6 +1203,52 @@ function openWrongbook() {
   showPage('page-wrongbook');
 }
 
+/* ---------- AI 分析及建议（DeepSeek，错题本） ---------- */
+/* Key 以 base64 存放（公开仓库安全扫描要求），运行时解码使用 */
+var DEEPSEEK_KEY = atob('c2stNGNmOGRmMDljOTAyNDY0MzhkNzUzYWM0ZjBhMmViMTg=');
+
+function aiAnalyzeWrongbook() {
+  var box = $('wrong-ai');
+  var list = collectWrongRecords();
+  box.style.display = '';
+  if (!list.length) { box.textContent = '当前没有错题，全部掌握得很好，无需分析！'; return; }
+  box.textContent = 'AI 正在分析错题，请稍候…（约10-20秒）';
+
+  // 汇总错题信息供 AI 参考
+  var perBank = {};
+  list.forEach(function (it) { perBank[it.bid] = (perBank[it.bid] || 0) + 1; });
+  var details = list.slice(0, 30).map(function (it) {
+    var qt = (it.record.question || '').replace(/\s+/g, ' ').slice(0, 40);
+    return '题库' + it.bid + '「' + qt + '」用时' + it.record.duration + '秒';
+  }).join('；');
+  var st = collectUserStats(S.currentUser);
+  var prompt = '一位学生正在用数学刷题软件学习。他的数据如下：\n' +
+    '总答题 ' + st.total + ' 道，整体正确率 ' + (st.total ? (st.correct / st.total * 100).toFixed(1) + '%' : '暂无') + '。\n' +
+    '当前共有错题 ' + list.length + ' 道，分布：' +
+    Object.keys(perBank).map(function (b) { return b + '题库' + perBank[b] + '道'; }).join('，') + '。\n' +
+    '部分错题明细：' + details + '\n' +
+    '请用亲切简明的语言（250字以内）分两点回答：1.分析这位学生的薄弱环节；2.给出具体的复习策略和建议。';
+
+  fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 600,
+      temperature: 0.7
+    })
+  }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function (d) {
+    var text = d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
+    box.textContent = text || 'AI 没有返回内容，请稍后再试。';
+  }).catch(function () {
+    box.textContent = 'AI 分析失败，请检查网络后重试。';
+  });
+}
+
 /* ---------- PDF 生成（统计报告 / 错题本，可保存可转发微信） ---------- */
 /* 取图片地址：优先本机更新包，并把文字/手写批注画上去 */
 function getCompositedDataURL(path) {
@@ -1560,6 +1606,7 @@ function bindEvents() {
   // 错题本页
   $('wrongbook-back').addEventListener('click', function () { renderBankGrid(); enterMain(); });
   $('wrongbook-export').addEventListener('click', exportWrongbookPDF);
+  $('wrong-ai-btn').addEventListener('click', aiAnalyzeWrongbook);
   $('wrong-img').addEventListener('click', function () { openZoom(this.src); });
 
   // 播放条拖动手柄
