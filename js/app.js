@@ -1257,7 +1257,14 @@ function ocrOneQuestion(worker, item) {
   });
 }
 
+/* 特殊账户 0/0：禁止使用 AI 分析和导出 PDF */
+function deniedForAccount0() {
+  if (S.account === '0') { toast('该账户暂不支持此功能，申请开通请微信mathlan3', 3500); return true; }
+  return false;
+}
+
 function aiAnalyzeWrongbook() {
+  if (deniedForAccount0()) return;
   var box = $('wrong-ai');
   var list = collectWrongRecords();
   box.style.display = '';
@@ -1445,6 +1452,7 @@ function exportDomToPDF(dom, filename) {
 }
 
 function exportStatsPDF() {
+  if (deniedForAccount0()) return;
   var uid = S.currentUser;
   var st = collectUserStats(uid);
   var rep = el('div', 'pdf-report');
@@ -1465,6 +1473,7 @@ function exportStatsPDF() {
 }
 
 function exportWrongbookPDF() {
+  if (deniedForAccount0()) return;
   var list = collectWrongRecords();
   if (!list.length) { toast('当前没有错题，无需导出'); return; }
   if (!window.jspdf || !window.html2canvas) { toast('PDF 组件未加载，请检查网络后刷新'); return; }
@@ -1496,7 +1505,7 @@ function exportWrongbookPDF() {
   chain.then(function () {
     // 如果刚做过 AI 分析，把分析结果附在错题后面一起导出
     if (S.lastAIAnalysis) {
-      rep.appendChild(el('h2', '', 'AI 分析及建议（DeepSeek）'));
+      rep.appendChild(el('h2', '', 'AI 分析及建议'));
       S.lastAIAnalysis.split('\n').forEach(function (line) {
         if (line.trim()) rep.appendChild(el('p', 'pdf-line', line));
       });
