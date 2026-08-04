@@ -330,6 +330,30 @@ function closeAudioBar() {
   try { a.load(); } catch (e) {}
   bar.style.display = 'none';
 }
+/* 播放条位置可手动调整：按住 ⠿ 手柄拖动到任意位置 */
+function initAudioBarDrag() {
+  var bar = $('audio-bar'), grip = $('audio-grip');
+  var sx = 0, sy = 0, sl = 0, st = 0, moving = false;
+  function down(x, y) {
+    var r = bar.getBoundingClientRect();
+    sl = r.left; st = r.top;
+    sx = x; sy = y;
+    moving = true;
+  }
+  function move(x, y) {
+    if (!moving) return;
+    bar.classList.add('floating');
+    bar.style.left = Math.max(0, Math.min(window.innerWidth - 80, sl + x - sx)) + 'px';
+    bar.style.top = Math.max(0, Math.min(window.innerHeight - 50, st + y - sy)) + 'px';
+  }
+  function up() { moving = false; }
+  grip.addEventListener('touchstart', function (e) { down(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
+  grip.addEventListener('touchmove', function (e) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
+  grip.addEventListener('touchend', up);
+  grip.addEventListener('mousedown', function (e) { down(e.clientX, e.clientY); e.preventDefault(); });
+  window.addEventListener('mousemove', function (e) { move(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', up);
+}
 /* 音频/视频用悬浮播放器展示（带播放控件，自动播放被拦截时可手动点播放）。
    安卓 WebView 对 data: 地址的音视频支持差，优先用本机对象地址，加载失败再退回 data: 地址 */
 function openMediaOverlay(kind, src) {
@@ -364,7 +388,11 @@ function openMediaOverlay(kind, src) {
     media.src = src;
   }
   if (kind === 'image') {
-    media.addEventListener('click', function () { openZoom(media.src); });
+    media.addEventListener('click', function () {
+      var src2 = media.src;
+      closeMediaOverlay();   // 先关批注遮罩，放大页才能直接缩放旋转
+      openZoom(src2);
+    });
   }
   body.appendChild(media);
   $('media-overlay').classList.add('show');
@@ -1207,7 +1235,8 @@ function getCompositedDataURL(path) {
   });
 }
 
-/* 保存/分享：浏览器优先调系统分享（可转发微信），否则走下载（安卓 APP 由外壳保存到「下载」） */
+/* 保存/分享：浏览器优先调系统分享（可转发微信），其次本机对象地址下载；
+   安卓 APP（file://）走 data: 地址，由外壳保存到「下载」文件夹 */
 function sharePDF(blob, filename) {
   try {
     var file = new File([blob], filename, { type: 'application/pdf' });
@@ -1216,20 +1245,33 @@ function sharePDF(blob, filename) {
       return;
     }
   } catch (e) {}
-  var rd = new FileReader();
-  rd.onload = function () {
-    // data: 地址附加文件名参数，便于安卓外壳识别保存
-    var url = rd.result.replace('data:application/pdf',
-      'data:application/pdf;filename=' + encodeURIComponent(filename));
+  if (location.protocol === 'file:') {
+    var rd = new FileReader();
+    rd.onload = function () {
+      // data: 地址附加文件名参数，便于安卓外壳识别保存
+      var url = rd.result.replace('data:application/pdf',
+        'data:application/pdf;filename=' + encodeURIComponent(filename));
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('PDF 已生成，可在「下载」文件夹查看', 3200);
+    };
+    rd.readAsDataURL(blob);
+  } else {
+    // 浏览器：对象地址下载，稳定可靠
+    var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    toast('PDF 已生成，可在「下载」文件夹查看', 3200);
-  };
-  rd.readAsDataURL(blob);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 8000);
+    toast('PDF 已开始下载', 3200);
+  }
 }
 
 /* 把一段排版好的内容（隐藏容器内）渲染成多页 PDF */
@@ -1519,6 +1561,9 @@ function bindEvents() {
   $('wrongbook-back').addEventListener('click', function () { renderBankGrid(); enterMain(); });
   $('wrongbook-export').addEventListener('click', exportWrongbookPDF);
   $('wrong-img').addEventListener('click', function () { openZoom(this.src); });
+
+  // 播放条拖动手柄
+  initAudioBarDrag();
 }
 
 /* ---------- 启动 ---------- */
