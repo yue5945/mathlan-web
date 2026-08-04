@@ -47,12 +47,12 @@
     <button class="btn" data-act="user">用户ID</button>
     <button class="btn" data-act="review">查看</button>
     <button class="btn" data-act="help">帮助</button>
-    <button class="btn" data-act="submit-go">提交</button>
-    <button class="btn" data-act="update">更新</button>
-    <button class="btn" data-act="suansuan">䷿</button>
     <button class="btn" data-act="stats">统计</button>
     <button class="btn" data-act="app">应用</button>
     <button class="btn" data-act="wrongbook">错题本</button>
+    <button class="btn" data-act="submit-go">提交</button>
+    <button class="btn" data-act="update">更新</button>
+    <button class="btn" data-act="suansuan">䷿</button>
   </div>
 
   <div class="clock-bar">
@@ -185,7 +185,7 @@
   </div>
   <div class="overlay-body help-body">
     <h3>基本操作</h3>
-    <p>1. 点「用户ID」输入用户编号（1-30）<br>2. 点 A1-C3 选择题库开始答题<br>3. 选择答案后点「提交」确认；不选答案直接提交可查看答案图片</p>
+    <p>1. 点「用户ID」输入用户自定义名<br>2. 点 A1-C3 选择题库开始答题<br>3. 选择答案后点「提交」确认；不选答案直接提交可查看答案图片</p>
     <h3>按钮颜色</h3>
     <p>绿色 ✓：该题库已全部答对<br>红色 ?：最近答题有错误<br>默认色：未完成</p>
     <h3>功能说明</h3>
@@ -211,8 +211,9 @@
   </div>
 </div>
 
-<!-- 批注音频悬浮播放条（不遮挡页面，边听边看） -->
+<!-- 批注音频悬浮播放条（不遮挡页面，边听边看，按住 ⠿ 可拖动位置） -->
 <div id="audio-bar" style="display:none">
+  <span class="audio-grip" id="audio-grip">⠿</span>
   <audio id="audio-el" controls></audio>
   <button class="btn btn-small" id="audio-bar-close">✕</button>
 </div>
@@ -227,6 +228,6 @@
 <script src="js/jszip.min.js"></script>
 <script src="js/jspdf.umd.min.js"></script>
 <script src="js/html2canvas.min.js"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>
