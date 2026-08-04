@@ -280,7 +280,9 @@ function playMedia(rel, kind) {
   var norm = String(rel).replace(/\\/g, '/');
   idbGet('img:' + norm).then(function (b) {
     if (!b) { toast('批注文件不在本机，请先点「更新」下载'); return; }
-    if (kind === 'image') {
+    if (kind === 'audio') {
+      openAudioBar(b);   // 悬浮播放条：不遮挡页面，边听边看图
+    } else if (kind === 'image') {
       var rd = new FileReader();
       rd.onload = function () { openMediaOverlay('image', rd.result); };
       rd.readAsDataURL(b);
@@ -288,6 +290,29 @@ function playMedia(rel, kind) {
       openMediaOverlay(kind, b);
     }
   }).catch(function () { toast('读取批注失败'); });
+}
+/* 批注音频悬浮播放条：固定在屏幕底部，不遮挡题目/图片，可边听边操作 */
+function openAudioBar(blob) {
+  var bar = $('audio-bar'), a = $('audio-el');
+  a.dataset.objUrl = '1';
+  a.onerror = function () {
+    if (!a.dataset.objUrl) return;
+    a.dataset.objUrl = '';
+    var rd = new FileReader();
+    rd.onload = function () { a.src = rd.result; a.play().catch(function () {}); };
+    rd.readAsDataURL(blob);
+  };
+  a.src = URL.createObjectURL(blob);
+  bar.style.display = 'flex';
+  var p = a.play();
+  if (p && p.catch) p.catch(function () { toast('点底部播放条的 ▶ 开始收听'); });
+}
+function closeAudioBar() {
+  var bar = $('audio-bar'), a = $('audio-el');
+  try { a.pause(); } catch (e) {}
+  a.removeAttribute('src');
+  try { a.load(); } catch (e) {}
+  bar.style.display = 'none';
 }
 /* 音频/视频用悬浮播放器展示（带播放控件，自动播放被拦截时可手动点播放）。
    安卓 WebView 对 data: 地址的音视频支持差，优先用本机对象地址，加载失败再退回 data: 地址 */
@@ -987,6 +1012,38 @@ function initZoom(img) {
   bindCtrl('zoom-rotl', function () { rot = (rot - 90 + 360) % 360; apply(); });
   bindCtrl('zoom-rotr', function () { rot = (rot + 90) % 360; apply(); });
 
+  // 双指捏合缩放（双指间距变化控制大小，双指整体移动控制位置）
+  var zoomBody = $('zoom-body');
+  var pinchDist = 0, pinchScale = 1, pinchTx = 0, pinchTy = 0, pinchMidX = 0, pinchMidY = 0;
+  function tDist(t) {
+    var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  function tMid(t) { return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 }; }
+  zoomBody.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 2) {
+      dragging = false;
+      pinchDist = tDist(e.touches);
+      pinchScale = scale;
+      pinchTx = tx; pinchTy = ty;
+      var m = tMid(e.touches);
+      pinchMidX = m.x; pinchMidY = m.y;
+    }
+  }, { passive: true });
+  zoomBody.addEventListener('touchmove', function (e) {
+    if (e.touches.length === 2 && pinchDist > 0) {
+      scale = Math.min(6, Math.max(0.4, pinchScale * tDist(e.touches) / pinchDist));
+      var m = tMid(e.touches);
+      tx = pinchTx + (m.x - pinchMidX);
+      ty = pinchTy + (m.y - pinchMidY);
+      apply();
+      e.preventDefault();
+    }
+  }, { passive: false });
+  zoomBody.addEventListener('touchend', function (e) {
+    if (e.touches.length < 2) pinchDist = 0;
+  }, { passive: true });
+
   img.addEventListener('dblclick', function () {
     if (scale > 1) { scale = 1; tx = 0; ty = 0; } else { scale = 2.5; }
     apply();
@@ -1104,6 +1161,7 @@ function bindEvents() {
   $('answer-img').addEventListener('click', function () { openZoom(this.src); });
   $('help-close').addEventListener('click', function () { $('help-overlay').classList.remove('show'); });
   $('media-close').addEventListener('click', closeMediaOverlay);
+  $('audio-bar-close').addEventListener('click', closeAudioBar);
 }
 
 /* ---------- 启动 ---------- */
