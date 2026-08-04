@@ -26,7 +26,9 @@ var S = {
   qIndex: 0,
   qStart: 0,              // 当前题开始计时
   startTime: Date.now(),  // 运行计时
-  reviewQid: null
+  reviewQid: null,
+  anns: {},               // 批注数据（annotations.json，键统一为正斜杠路径）
+  audioEl: null           // 正在播放的批注音频
 };
 
 /* ---------- 小工具 ---------- */
@@ -171,6 +173,96 @@ function setImgSrc(el, path) {
   }).catch(function () {});
 }
 
+/* ---------- 批注（音频/视频/图片批注，来自 OSS 更新包的 annotations.json） ---------- */
+var ANN_KEY = 'mathlan_annotations_v1';
+
+function normalizeAnns(raw) {
+  var norm = {};
+  Object.keys(raw || {}).forEach(function (k) {
+    var v = raw[k];
+    ['audio_annotations', 'video_annotations', 'image_annotations'].forEach(function (f) {
+      (v[f] || []).forEach(function (a) { if (a.path) a.path = String(a.path).replace(/\\/g, '/'); });
+    });
+    norm[String(k).replace(/\\/g, '/')] = v;
+  });
+  return norm;
+}
+function loadAnns() {
+  try { return JSON.parse(localStorage.getItem(ANN_KEY)) || {}; } catch (e) { return {}; }
+}
+function saveAnns(a) {
+  try { localStorage.setItem(ANN_KEY, JSON.stringify(a)); } catch (e) {}
+}
+/* 某张题目/答案图片上挂的批注；没有则返回 null */
+function annsFor(imgPath) {
+  if (!imgPath) return null;
+  var norm = String(imgPath).replace(/\\/g, '/').replace(/^assets\//, '');
+  var a = (S.anns || {})[norm];
+  if (!a) return null;
+  var aud = a.audio_annotations || [], vid = a.video_annotations || [], img = a.image_annotations || [];
+  if (!aud.length && !vid.length && !img.length) return null;
+  return { audio: aud, video: vid, image: img };
+}
+/* 播放/查看批注文件（更新时已把批注文件存进 IndexedDB，键与图片相同规则） */
+function playMedia(rel, kind) {
+  var norm = String(rel).replace(/\\/g, '/');
+  idbGet('img:' + norm).then(function (b) {
+    if (!b) { toast('批注文件不在本机，请先点「更新」下载'); return; }
+    var rd = new FileReader();
+    rd.onload = function () {
+      if (kind === 'audio') {
+        if (S.audioEl) { try { S.audioEl.pause(); } catch (e) {} }
+        S.audioEl = new Audio(rd.result);
+        S.audioEl.play().catch(function () { toast('音频播放失败'); });
+        toast('正在播放批注音频…');
+      } else {
+        openMediaOverlay(kind, rd.result);
+      }
+    };
+    rd.readAsDataURL(b);
+  }).catch(function () { toast('读取批注失败'); });
+}
+function openMediaOverlay(kind, dataUrl) {
+  var body = $('media-body');
+  body.innerHTML = '';
+  if (kind === 'video') {
+    var v = document.createElement('video');
+    v.src = dataUrl; v.controls = true; v.autoplay = true; v.className = 'media-video';
+    v.setAttribute('playsinline', '');
+    body.appendChild(v);
+    $('media-title').textContent = '批注视频';
+  } else {
+    var im = document.createElement('img');
+    im.src = dataUrl; im.className = 'media-img'; im.alt = '批注图片';
+    im.addEventListener('click', function () { openZoom(dataUrl); });
+    body.appendChild(im);
+    $('media-title').textContent = '批注图片';
+  }
+  $('media-overlay').classList.add('show');
+}
+function closeMediaOverlay() {
+  $('media-overlay').classList.remove('show');
+  $('media-body').innerHTML = '';   // 同时停止视频播放
+}
+/* 在图片下方生成批注按钮条；没有批注则隐藏 */
+function renderAnnBar(container, imgPath) {
+  if (!container) return;
+  container.innerHTML = '';
+  var anns = annsFor(imgPath);
+  if (!anns) { container.style.display = 'none'; return; }
+  container.style.display = '';
+  function addBtn(list, label, kind) {
+    list.forEach(function (a, i) {
+      var b = el('button', 'btn btn-small ann-btn', label + (list.length > 1 ? ' ' + (i + 1) : ''));
+      b.addEventListener('click', function (ev) { ev.stopPropagation(); playMedia(a.path, kind); });
+      container.appendChild(b);
+    });
+  }
+  addBtn(anns.audio, '▶ 听批注', 'audio');
+  addBtn(anns.video, '▶ 看批注视频', 'video');
+  addBtn(anns.image, '🖼 看批注图', 'image');
+}
+
 /* ---------- OSS 在线更新：下载 mathlan.zip 并在浏览器内解压替换题库 ---------- */
 var OSS_ZIP_URL = 'https://mathlan.oss-cn-beijing.aliyuncs.com/mathlan.zip';
 
@@ -236,13 +328,17 @@ function downloadAndApply(meta) {
       var size = buf.byteLength;
       return JSZip.loadAsync(buf).then(function (zip) {
         var jobs = [];
-        var qData = null;
+        var qData = null, annData = null;
         zip.forEach(function (rel, file) {
           if (file.dir) return;
           rel = rel.replace(/\\/g, '/');
           if (rel === 'math_questions.json') {
             jobs.push(file.async('string').then(function (s) { qData = JSON.parse(s); }));
-          } else if (/^(question_images|answer_images)\//.test(rel)) {
+          } else if (rel === 'annotations.json') {
+            jobs.push(file.async('string').then(function (s) {
+              try { annData = normalizeAnns(JSON.parse(s)); } catch (e) {}
+            }));
+          } else if (/^(question_images|answer_images|audio_annotations|video_annotations|image_annotations)\//.test(rel)) {
             jobs.push(file.async('blob').then(function (b) { return idbSet('img:' + rel, b); }));
           }
         });
@@ -258,6 +354,7 @@ function downloadAndApply(meta) {
             S.bidQuestions = [];
             renderBankGrid();
           }
+          if (annData) { saveAnns(annData); S.anns = annData; }
           saveOssMeta(size, meta && meta.lastModified ? meta.lastModified : '');
           refreshUpdateTimeLabel();
           toast('更新完成 ✅ 题库更新于 ' + fmtTime(Date.now()), 3500);
@@ -474,6 +571,7 @@ function renderQuestion() {
   } else {
     imgWrap.style.display = 'none';
   }
+  renderAnnBar($('quiz-ann'), q[2]);
 
   // 选项：有图题默认 A-D，否则尝试从题干第二行解析（与桌面版一致）
   var options = ['A', 'B', 'C', 'D'];
@@ -572,11 +670,13 @@ function navQuestion(delta) {
 function showAnswerOverlay(src, title) {
   $('answer-overlay-title').textContent = title || '答案';
   setImgSrc($('answer-img'), src);
+  renderAnnBar($('answer-ann'), src);
   $('answer-overlay').classList.add('show');
 }
 
 /* ---------- 查看（错题） ---------- */
 var reviewTab = 'A1';
+var reviewDelArm = 0;   // 安卓 WebView 不支持 confirm()，用「再点一次确认」代替
 function openReview() {
   var tabs = $('review-tabs');
   tabs.innerHTML = '';
@@ -621,15 +721,23 @@ function showReviewAnswer(bid, item) {
     $('review-hint').style.display = 'none';
     $('review-img').style.display = '';
     setImgSrc($('review-img'), img);
+    renderAnnBar($('review-ann'), img);
     $('review-delete').style.display = '';
   } else {
     $('review-hint').style.display = '';
     $('review-hint').textContent = '该题目没有答案图片';
     $('review-img').style.display = 'none';
+    renderAnnBar($('review-ann'), '');
     $('review-delete').style.display = '';
   }
   $('review-delete').onclick = function () {
-    if (!confirm('确定要删除这条错误记录吗？')) return;
+    // 安卓 WebView 不支持 confirm() 弹窗，改为「再点一次确认」
+    if (Date.now() - reviewDelArm >= 3000) {
+      reviewDelArm = Date.now();
+      toast('再点一次「删除」确认删除这条错误记录', 2800);
+      return;
+    }
+    reviewDelArm = 0;
     var ud = userData(S.currentUser, bid);
     ud.history = ud.history.filter(function (h) {
       return !(!h.correct && (h.question || '').indexOf(item.qid) === 0);
@@ -752,11 +860,11 @@ function openMultiStats() {
   showPage('page-stats');
 }
 
-/* ---------- 图片放大 ---------- */
+/* ---------- 图片放大（双击/按钮缩放、单指拖动、按钮旋转） ---------- */
 function openZoom(src) {
   var img = $('zoom-img');
   img.src = src;
-  img.style.transform = 'scale(1)';
+  img.style.transform = 'translate(0px,0px) scale(1) rotate(0deg)';
   $('zoom-overlay').classList.add('show');
   initZoom(img);
 }
@@ -765,10 +873,24 @@ var zoomBound = false;
 function initZoom(img) {
   if (zoomBound) return;
   zoomBound = true;
-  var scale = 1, tx = 0, ty = 0;
+  var scale = 1, tx = 0, ty = 0, rot = 0;
   var startX = 0, startY = 0, dragging = false, moved = false;
 
-  function apply() { img.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')'; }
+  function apply() {
+    img.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ') rotate(' + rot + 'deg)';
+  }
+  function bindCtrl(id, fn) {
+    var b = $(id);
+    if (b) b.addEventListener('click', function (e) { e.stopPropagation(); fn(); });
+  }
+  bindCtrl('zoom-in', function () { scale = Math.min(6, scale * 1.3); apply(); });
+  bindCtrl('zoom-out', function () {
+    scale = Math.max(0.4, scale / 1.3);
+    if (scale <= 1) { tx = 0; ty = 0; }
+    apply();
+  });
+  bindCtrl('zoom-rotl', function () { rot = (rot - 90 + 360) % 360; apply(); });
+  bindCtrl('zoom-rotr', function () { rot = (rot + 90) % 360; apply(); });
 
   img.addEventListener('dblclick', function () {
     if (scale > 1) { scale = 1; tx = 0; ty = 0; } else { scale = 2.5; }
@@ -805,7 +927,7 @@ function initZoom(img) {
   $('zoom-overlay').addEventListener('click', function (e) {
     if (e.target === $('zoom-overlay') || e.target === $('zoom-body')) {
       $('zoom-overlay').classList.remove('show');
-      scale = 1; tx = 0; ty = 0; apply();
+      scale = 1; tx = 0; ty = 0; rot = 0; apply();
     }
   });
 }
@@ -860,8 +982,12 @@ function bindEvents() {
     });
   }
 
+  // 安卓 WebView 不支持 confirm() 弹窗（点击会静默失败），改为「再点一次确认」
+  var logoutArm = 0;
   $('logout-btn').addEventListener('click', function () {
-    if (confirm('确定退出登录吗？（答题数据保留在本机）')) showPage('page-login');
+    if (Date.now() - logoutArm < 3000) { logoutArm = 0; showPage('page-login'); return; }
+    logoutArm = Date.now();
+    toast('再点一次「退出登录」确认退出（答题数据保留在本机）', 2800);
   });
 
   // 答题页
@@ -882,6 +1008,7 @@ function bindEvents() {
   $('answer-close').addEventListener('click', function () { $('answer-overlay').classList.remove('show'); });
   $('answer-img').addEventListener('click', function () { openZoom(this.src); });
   $('help-close').addEventListener('click', function () { $('help-overlay').classList.remove('show'); });
+  $('media-close').addEventListener('click', closeMediaOverlay);
 }
 
 /* ---------- 启动 ---------- */
@@ -894,6 +1021,7 @@ function boot() {
     ];
   }).then(function (su) {
     S.specialUsers = su || [];
+    S.anns = loadAnns();
     // 有缓存先用缓存（秒开），同时后台静默刷新到最新题库
     var cached = loadQCache();
     if (cached) {
@@ -907,6 +1035,12 @@ function boot() {
     bindEvents();
     startClock();
     loadQuestions(!cached);
+    // 本机还没有批注数据时，尝试加载内置批注文件
+    if (!Object.keys(S.anns).length) {
+      fetchWithRetry('assets/annotations.json', 1, 500).then(function (a) {
+        if (a && Object.keys(a).length) { S.anns = normalizeAnns(a); }
+      }).catch(function () {});
+    }
   });
 }
 
