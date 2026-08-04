@@ -225,3 +225,42 @@ img { user-select: none; -webkit-user-drag: none; }
   font-size: 20px; padding: 11px 12px; text-align: center;
   border: 1px solid var(--line); border-radius: 10px; background: #fffdf7;
 }
+
+/* ---------- 功能按钮九宫格（3×3，尺寸向题库按钮看齐） ---------- */
+.func-grid .btn { font-size: 17px; padding: 16px 0; }
+
+/* 播放条紧凑化：居中胶囊，横屏时也不再横贯屏幕 */
+#audio-bar {
+  left: 50%; right: auto; transform: translateX(-50%);
+  width: max-content; min-width: 260px; max-width: 92vw;
+}
+#audio-el { width: 210px; flex: none; }
+#audio-bar.up { bottom: calc(env(safe-area-inset-bottom) + 88px); }
+
+/* 页面工具条（统计/错题本页顶部按钮） */
+.page-toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 10px 14px 2px; }
+
+/* 统计总览卡片 */
+.stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.stat-card { background: #fffdf7; border: 1px solid var(--line); border-radius: 10px; padding: 10px 4px; text-align: center; }
+.stat-card-val { font-size: 17px; font-weight: 700; color: var(--btn); }
+.stat-card-label { font-size: 12px; opacity: .6; margin-top: 2px; }
+.advice { font-size: 14px; line-height: 1.7; margin: 4px 0; }
+
+/* 错题本 */
+.wrong-list { max-height: 34vh; overflow-y: auto; padding: 8px 14px; }
+#wrong-img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; cursor: zoom-in; }
+
+/* PDF 报告离屏容器与排版 */
+#pdf-holder { position: fixed; left: -10000px; top: 0; z-index: -1; }
+.pdf-report {
+  width: 760px; background: #FFF5E1; padding: 32px;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #2f4f4f;
+}
+.pdf-report h1 { font-size: 26px; margin: 0 0 6px; }
+.pdf-report h2 { font-size: 18px; margin: 18px 0 8px; }
+.pdf-sub { font-size: 13px; opacity: .7; margin: 0 0 14px; }
+.pdf-line { font-size: 14px; line-height: 1.8; margin: 4px 0; }
+.pdf-img { max-width: 100%; border: 1px solid #d8cdbb; border-radius: 8px; background: #fff; margin-top: 6px; }
+.pdf-foot { font-size: 12px; opacity: .6; margin-top: 24px; text-align: center; }
+.pdf-wrong { margin-bottom: 14px; }
