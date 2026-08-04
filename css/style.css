@@ -201,3 +201,13 @@ img { user-select: none; -webkit-user-drag: none; }
 
 /* 批注音频播放器 */
 .media-audio { width: 86vw; max-width: 420px; margin-top: 30px; }
+
+/* 批注音频悬浮播放条 */
+#audio-bar {
+  position: fixed; left: 10px; right: 10px; bottom: calc(env(safe-area-inset-bottom) + 10px);
+  z-index: 80; display: flex; align-items: center; gap: 8px;
+  background: rgba(47, 79, 79, .95); border-radius: 999px; padding: 6px 8px 6px 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+#audio-el { flex: 1; height: 38px; min-width: 0; }
+#audio-bar-close { background: rgba(255, 255, 255, .92); flex: none; }
