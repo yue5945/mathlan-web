@@ -53,6 +53,22 @@ function showPage(id) {
   $(id).classList.add('active');
   window.scrollTo(0, 0);
 }
+/* ---------- 自定义输入框（系统 prompt() 在部分浏览器/安卓 WebView 会静默失败） ---------- */
+var inputCb = null;
+function askInput(title, initial, cb) {
+  $('input-title').textContent = title;
+  var f = $('input-field');
+  f.value = initial || '';
+  inputCb = cb;
+  $('input-overlay').classList.add('show');
+  setTimeout(function () { try { f.focus(); f.select(); } catch (e) {} }, 150);
+}
+function closeInput(ok) {
+  $('input-overlay').classList.remove('show');
+  var cb = inputCb;
+  inputCb = null;
+  if (ok && cb) cb($('input-field').value);
+}
 function deepcopy(o) { return JSON.parse(JSON.stringify(o)); }
 
 /* ---------- 数据加载 ---------- */
@@ -985,6 +1001,7 @@ function openZoom(src) {
   var img = $('zoom-img');
   img.src = src;
   img.style.transform = 'translate(0px,0px) scale(1) rotate(0deg)';
+  $('audio-bar').classList.add('up');   // 播放条上移，避开缩放工具条
   $('zoom-overlay').classList.add('show');
   initZoom(img);
 }
@@ -1079,6 +1096,7 @@ function initZoom(img) {
   $('zoom-overlay').addEventListener('click', function (e) {
     if (e.target === $('zoom-overlay') || e.target === $('zoom-body')) {
       $('zoom-overlay').classList.remove('show');
+      $('audio-bar').classList.remove('up');   // 播放条回到底部
       scale = 1; tx = 0; ty = 0; rot = 0; apply();
     }
   });
@@ -1105,20 +1123,20 @@ function bindEvents() {
     btns[i].addEventListener('click', function () {
       var act = this.dataset.act;
       if (act === 'user') {
-        var v = prompt('请输入用户ID（1-30）:', S.currentUser);
-        if (v === null) return;
-        v = v.trim();
-        if (/^\d+$/.test(v) && +v >= 1 && +v <= 30) {
-          S.currentUser = v;
-          $('main-user-label').textContent = '用户 ' + v;
-          renderBankGrid();
-          toast('用户' + v + '已登录');
-        } else toast('无效的用户ID（请输入1-30之间的数字）');
+        askInput('请输入用户ID（1-30）', S.currentUser, function (v) {
+          v = (v || '').trim();
+          if (/^\d+$/.test(v) && +v >= 1 && +v <= 30) {
+            S.currentUser = v;
+            $('main-user-label').textContent = '用户 ' + v;
+            renderBankGrid();
+            toast('用户' + v + '已登录');
+          } else toast('无效的用户ID（请输入1-30之间的数字）');
+        });
       } else if (act === 'stat-id') {
-        var s = prompt('请输入要统计的用户序号（1-30）:', S.statId || S.currentUser);
-        if (s === null) return;
-        S.statId = s.trim();
-        if (S.statId) toast('统计对象：用户 ' + S.statId);
+        askInput('请输入要统计的用户序号（1-30）', S.statId || S.currentUser, function (s) {
+          S.statId = (s || '').trim();
+          if (S.statId) toast('统计对象：用户 ' + S.statId);
+        });
       } else if (act === 'review') openReview();
       else if (act === 'single') openSingleStats();
       else if (act === 'multi') openMultiStats();
@@ -1162,6 +1180,11 @@ function bindEvents() {
   $('help-close').addEventListener('click', function () { $('help-overlay').classList.remove('show'); });
   $('media-close').addEventListener('click', closeMediaOverlay);
   $('audio-bar-close').addEventListener('click', closeAudioBar);
+  $('input-ok').addEventListener('click', function () { closeInput(true); });
+  $('input-cancel').addEventListener('click', function () { closeInput(false); });
+  $('input-field').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') closeInput(true);
+  });
 }
 
 /* ---------- 启动 ---------- */
