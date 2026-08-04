@@ -667,6 +667,7 @@ function initLogin() {
       $('login-btn').disabled = false;
       if (!res.ok) { $('login-error').textContent = res.msg; return; }
       S.account = u;
+      S.lastAIAnalysis = '';   // 换账户后清空上一次 AI 分析，避免混进别人的 PDF
       // 用户名和密码自动保留，不清除
       $('login-remember').checked = true;
       try {
@@ -1330,8 +1331,10 @@ function aiAnalyzeWrongbook() {
       return r.json();
     }).then(function (d) {
       var text = d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
-      box.textContent = (over ? '（错题较多，本次分析前 ' + AI_OCR_MAX + ' 道）\n\n' : '') +
-        (text || 'AI 没有返回内容，请稍后再试。');
+      text = text || 'AI 没有返回内容，请稍后再试。';
+      // 存起来，导出错题本 PDF 时一起带上
+      S.lastAIAnalysis = (over ? '（错题较多，本次分析前 ' + AI_OCR_MAX + ' 道）\n' : '') + text;
+      box.textContent = (over ? '（错题较多，本次分析前 ' + AI_OCR_MAX + ' 道）\n\n' : '') + text;
     });
   }).catch(function () {
     box.textContent = 'AI 分析失败，请检查网络后重试。';
@@ -1491,6 +1494,13 @@ function exportWrongbookPDF() {
     });
   });
   chain.then(function () {
+    // 如果刚做过 AI 分析，把分析结果附在错题后面一起导出
+    if (S.lastAIAnalysis) {
+      rep.appendChild(el('h2', '', 'AI 分析及建议（DeepSeek）'));
+      S.lastAIAnalysis.split('\n').forEach(function (line) {
+        if (line.trim()) rep.appendChild(el('p', 'pdf-line', line));
+      });
+    }
     rep.appendChild(el('p', 'pdf-foot', '数问阑珊 MathLan · 开发者微信：mathlan3'));
     exportDomToPDF(rep, '数问阑珊-错题本-用户' + S.currentUser + '.pdf');
   });
