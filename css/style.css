@@ -198,3 +198,6 @@ img { user-select: none; -webkit-user-drag: none; }
   display: flex; justify-content: center; gap: 10px; z-index: 60;
 }
 .zoom-ctrl .btn-small { background: rgba(255,255,255,.92); }
+
+/* 批注音频播放器 */
+.media-audio { width: 86vw; max-width: 420px; margin-top: 30px; }
