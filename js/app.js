@@ -100,6 +100,11 @@ function applyQuestions(q) {
 }
 
 function loadQuestions(showStatus) {
+  // 已经点过「更新」的设备：本机缓存才是最新题库，绝不能用内置旧题库覆盖它
+  if (loadOssMeta() && loadQCache()) {
+    if (showStatus) toast('题库已就绪');
+    return Promise.resolve();
+  }
   if (showStatus) toast('题库加载中…', 15000);
   return fetchWithRetry('assets/math_questions.json', 5, 800).then(function (q) {
     applyQuestions(q);
@@ -208,37 +213,57 @@ function playMedia(rel, kind) {
   var norm = String(rel).replace(/\\/g, '/');
   idbGet('img:' + norm).then(function (b) {
     if (!b) { toast('批注文件不在本机，请先点「更新」下载'); return; }
-    var rd = new FileReader();
-    rd.onload = function () {
-      if (kind === 'audio') {
-        if (S.audioEl) { try { S.audioEl.pause(); } catch (e) {} }
-        S.audioEl = new Audio(rd.result);
-        S.audioEl.play().catch(function () { toast('音频播放失败'); });
-        toast('正在播放批注音频…');
-      } else {
-        openMediaOverlay(kind, rd.result);
-      }
-    };
-    rd.readAsDataURL(b);
+    if (kind === 'image') {
+      var rd = new FileReader();
+      rd.onload = function () { openMediaOverlay('image', rd.result); };
+      rd.readAsDataURL(b);
+    } else {
+      openMediaOverlay(kind, b);
+    }
   }).catch(function () { toast('读取批注失败'); });
 }
-function openMediaOverlay(kind, dataUrl) {
+/* 音频/视频用悬浮播放器展示（带播放控件，自动播放被拦截时可手动点播放）。
+   安卓 WebView 对 data: 地址的音视频支持差，优先用本机对象地址，加载失败再退回 data: 地址 */
+function openMediaOverlay(kind, src) {
   var body = $('media-body');
   body.innerHTML = '';
+  var media;
   if (kind === 'video') {
-    var v = document.createElement('video');
-    v.src = dataUrl; v.controls = true; v.autoplay = true; v.className = 'media-video';
-    v.setAttribute('playsinline', '');
-    body.appendChild(v);
+    media = document.createElement('video');
+    media.controls = true; media.className = 'media-video';
+    media.setAttribute('playsinline', '');
     $('media-title').textContent = '批注视频';
+  } else if (kind === 'audio') {
+    media = document.createElement('audio');
+    media.controls = true; media.className = 'media-audio';
+    $('media-title').textContent = '批注音频（点 ▶ 收听）';
   } else {
-    var im = document.createElement('img');
-    im.src = dataUrl; im.className = 'media-img'; im.alt = '批注图片';
-    im.addEventListener('click', function () { openZoom(dataUrl); });
-    body.appendChild(im);
+    media = document.createElement('img');
+    media.className = 'media-img'; media.alt = '批注图片';
     $('media-title').textContent = '批注图片';
   }
+  if (src instanceof Blob) {
+    media.dataset.objUrl = '1';
+    media.onerror = function () {
+      if (!media.dataset.objUrl) return;
+      media.dataset.objUrl = '';
+      var rd = new FileReader();
+      rd.onload = function () { media.src = rd.result; };
+      rd.readAsDataURL(src);
+    };
+    media.src = URL.createObjectURL(src);
+  } else {
+    media.src = src;
+  }
+  if (kind === 'image') {
+    media.addEventListener('click', function () { openZoom(media.src); });
+  }
+  body.appendChild(media);
   $('media-overlay').classList.add('show');
+  if (kind === 'audio' || kind === 'video') {
+    var p = media.play();
+    if (p && p.catch) p.catch(function () { /* 被拦截时用户手动点播放即可 */ });
+  }
 }
 function closeMediaOverlay() {
   $('media-overlay').classList.remove('show');
@@ -279,11 +304,14 @@ function fetchBinRetry(url, tries, delayMs) {
 
 /* ---------- 版本识别：先对比 OSS 文件的大小和时间，相同就不下载 ---------- */
 var OSS_META_KEY = 'mathlan_oss_meta_v1';
+/* 内容格式版本：v2 起更新包会下载批注文件；本机记录缺这个字段时，
+   即使 OSS 文件没变也要重新下载一次，把批注补齐 */
+var OSS_CONTENT_V = 2;
 
 function saveOssMeta(size, lastModified) {
   try {
     localStorage.setItem(OSS_META_KEY, JSON.stringify({
-      size: size, lastModified: lastModified, localTime: Date.now()
+      size: size, lastModified: lastModified, localTime: Date.now(), v: OSS_CONTENT_V
     }));
   } catch (e) {}
 }
@@ -368,8 +396,8 @@ function ossUpdate() {
   toast('正在检查更新…');
   checkOssVersion().then(function (meta) {
     var local = loadOssMeta();
-    // OSS 文件的大小和时间与本机记录完全一致 → 已是最新，不下载
-    if (local && meta.lastModified && local.lastModified === meta.lastModified &&
+    // OSS 文件的大小和时间与本机记录完全一致、且内容格式也是新版 → 已是最新，不下载
+    if (local && local.v === OSS_CONTENT_V && meta.lastModified && local.lastModified === meta.lastModified &&
         (!meta.size || !local.size || local.size === meta.size)) {
       toast('您的题库已是最新版 ✅', 3000);
       return null;
