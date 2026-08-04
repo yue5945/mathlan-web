@@ -20,7 +20,7 @@
   <div class="login-wrap">
     <img class="login-logo" src="icon-512.png" width="92" height="92" alt="数问阑珊">
     <h1 class="login-title">数问阑珊</h1>
-    <p class="login-sub">MathLan · 数学刷题</p>
+    <p class="login-sub">MathLan · 数学好玩</p>
     <div class="login-form">
       <label class="form-label">用户名（11位数字）</label>
       <input id="login-username" type="text" inputmode="numeric" autocomplete="username">
@@ -28,7 +28,7 @@
       <input id="login-password" type="password" autocomplete="current-password">
       <label class="form-check"><input id="login-remember" type="checkbox"> 记住密码</label>
       <button id="login-btn" class="btn btn-primary btn-big">登 录</button>
-      <p class="login-tip">提示：字母区分大小写</p>
+      <p class="login-tip">开发者微信:mathlan3</p>
       <p class="login-error" id="login-error"></p>
     </div>
   </div>
@@ -146,7 +146,7 @@
     <button class="btn btn-small" id="zoom-rotl">⟲ 左转</button>
     <button class="btn btn-small" id="zoom-rotr">⟳ 右转</button>
   </div>
-  <p class="zoom-tip">双击放大/还原 · 单指拖动 · 按钮缩放旋转 · 点击空白关闭</p>
+  <p class="zoom-tip">双指捏合缩放 · 单指拖动 · 按钮缩放旋转 · 点击空白关闭</p>
 </div>
 
 <!-- 批注媒体遮罩（视频/图片批注） -->
@@ -178,11 +178,17 @@
   </div>
 </div>
 
+<!-- 批注音频悬浮播放条（不遮挡页面，边听边看） -->
+<div id="audio-bar" style="display:none">
+  <audio id="audio-el" controls></audio>
+  <button class="btn btn-small" id="audio-bar-close">✕</button>
+</div>
+
 <!-- 通用提示 -->
 <div id="toast"></div>
 
 <script src="js/crypto.js"></script>
 <script src="js/jszip.min.js"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/app.js?v=8"></script>
 </body>
 </html>
