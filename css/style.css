@@ -211,3 +211,17 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 #audio-el { flex: 1; height: 38px; min-width: 0; }
 #audio-bar-close { background: rgba(255, 255, 255, .92); flex: none; }
+
+/* 图片放大页打开时，音频播放条上移避开缩放工具条 */
+#audio-bar.up { bottom: calc(env(safe-area-inset-bottom) + 104px); }
+
+/* 通用输入对话框 */
+.input-dialog {
+  background: var(--bg); border-radius: 14px; padding: 20px 18px;
+  margin-top: 8vh; width: min(84vw, 340px);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.input-dialog input {
+  font-size: 20px; padding: 11px 12px; text-align: center;
+  border: 1px solid var(--line); border-radius: 10px; background: #fffdf7;
+}
