@@ -1277,13 +1277,17 @@ function openWrongbook() {
 var DEEPSEEK_KEY = atob('c2stNGNmOGRmMDljOTAyNDY0MzhkNzUzYWM0ZjBhMmViMTg=');
 /* DeepSeek 官方接口只收文字，不能直接读图；先用 Tesseract 把每道错题的
    题目图/答案图识别成文字，再交给 AI 逐题分析知识点。
-   轻量识别数据放在 GitHub Pages，安卓/网页通用，浏览器会自动缓存。 */
-var TESS_LANG_PATH = 'https://yue5945.github.io/mathlan-web/tessdata';
+   识别数据三条通道依次尝试：国内阿里云(主) → GitHub(备) → 官方源(兜底) */
+var TESS_LANG_PATHS = [
+  'https://mathlan.cn/tessdata',
+  'https://yue5945.github.io/mathlan-web/tessdata',
+  ''   // 空串 = 引擎默认官方地址（数据较大约20MB）
+];
 var AI_OCR_MAX = 15;        // 单次最多分析 15 道错题（太多会很慢）
 var AI_OCR_TIMEOUT = 45000; // 单张图识别最长 45 秒
 
-/* 创建识别引擎，带超时保护（超时/失败会 reject，由调用方换备用通道）。
-   langPath 传空串则用引擎默认地址（jsdelivr 官方数据，约20MB） */
+/* 创建识别引擎，带超时保护（超时/失败会 reject，由调用方换下一条通道）。
+   langPath 传空串则用引擎默认地址（jsdelivr 官方数据） */
 function createOcrWorker(langPath, timeoutMs) {
   var opts = {};
   if (langPath) opts.langPath = langPath;
@@ -1291,6 +1295,23 @@ function createOcrWorker(langPath, timeoutMs) {
   return Promise.race([p, new Promise(function (_res, rej) {
     setTimeout(function () { rej(new Error('ocr worker timeout')); }, timeoutMs);
   })]);
+}
+
+/* 依次尝试多条通道，返回第一个成功创建的引擎 */
+function createOcrWorkerChain(box) {
+  var msgs = ['首次使用正在下载图片识别数据（约4MB，以后不用再下）…',
+    '正在换备用通道1下载识别数据…',
+    '正在换备用通道2下载识别数据（较大约20MB，仅首次）…'];
+  var timeouts = [60000, 60000, 240000];
+  var i = 0;
+  function tryNext() {
+    if (i >= TESS_LANG_PATHS.length) return Promise.reject(new Error('all channels failed'));
+    box.textContent = msgs[i];
+    return createOcrWorker(TESS_LANG_PATHS[i], timeouts[i]).catch(function () {
+      i++; return tryNext();
+    });
+  }
+  return tryNext();
 }
 
 /* 把任意图片来源统一转成 data: 地址（识别引擎在安卓 file:// 下读不了相对路径） */
@@ -1367,14 +1388,11 @@ function aiAnalyzeWrongbook() {
   var over = totalAll > AI_OCR_MAX;
   if (over) items = items.slice(0, AI_OCR_MAX);
 
-  box.textContent = '首次使用正在下载图片识别数据（约4MB，以后不用再下）…\n（如果网络慢，1分半后会自动换备用通道）';
+  box.textContent = '首次使用正在下载图片识别数据（约4MB，以后不用再下）…';
 
   var worker = null;
-  /* 主通道（题库同址，数据小）；卡住或失败自动换备用通道（境外CDN，数据大但稳定） */
-  createOcrWorker(TESS_LANG_PATH, 90000).catch(function () {
-    box.textContent = '主通道较慢，正在换备用通道下载识别数据（约20MB，仅首次）…';
-    return createOcrWorker('', 240000);
-  }).then(function (w) {
+  /* 三条通道依次尝试：国内阿里云 → GitHub → 官方源 */
+  createOcrWorkerChain(box).then(function (w) {
     worker = w;
     var results = [];
     var seq = Promise.resolve();
