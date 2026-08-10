@@ -1503,19 +1503,31 @@ function sharePDF(blob, filename) {
     rd.readAsDataURL(blob);
     return;
   }
-  // 浏览器：悬浮下载条
+  // 浏览器：先按老方式自动下载（用户手势内生成失败时才需要悬浮条），同时弹悬浮条保底
+  var url = URL.createObjectURL(blob);
+  var auto = document.createElement('a');
+  auto.href = url;
+  auto.download = filename;
+  document.body.appendChild(auto);
+  auto.click();
+  auto.remove();
+  toast('PDF 已生成，若未自动保存请点下方按钮', 4000);
   var old = document.querySelector('.pdf-dl-bar');
   if (old) old.remove();
-  var url = URL.createObjectURL(blob);
   var bar = el('div', 'pdf-dl-bar');
-  var a = el('a', 'pdf-dl-btn', '⬇ PDF 已生成 · 点我保存');
+  var a = el('a', 'pdf-dl-btn', '⬇ 点我保存 PDF');
   a.href = url;
   a.download = filename;
   bar.appendChild(a);
+  var open = el('a', 'pdf-dl-btn pdf-dl-share', '在线打开');
+  open.href = url;
+  open.target = '_blank';
+  open.rel = 'noopener';
+  bar.appendChild(open);
   try {
     var file = new File([blob], filename, { type: 'application/pdf' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      var s = el('button', 'pdf-dl-btn pdf-dl-share', '转发（微信等）');
+      var s = el('button', 'pdf-dl-btn pdf-dl-share', '转发');
       s.addEventListener('click', function () {
         navigator.share({ files: [file], title: filename }).catch(function () {});
       });
