@@ -279,3 +279,22 @@ img { user-select: none; -webkit-user-drag: none; }
   background: #fffdf7; border: 1px solid var(--line); border-radius: 10px;
   font-size: 14px; line-height: 1.8; white-space: pre-wrap;
 }
+
+/* PDF 生成后的悬浮下载条（浏览器里自动下载会被拦截，改为用户亲手点） */
+.pdf-dl-bar {
+  position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; z-index: 80;
+  background: #fffdf7; border: 1px solid var(--line); border-radius: 14px;
+  padding: 10px 12px; box-shadow: 0 6px 20px rgba(47,79,79,.25);
+  max-width: 92vw;
+}
+.pdf-dl-btn {
+  display: inline-block; text-decoration: none; border: none; cursor: pointer;
+  font: 600 14px/1 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #fff; background: #ff8c5a; border-radius: 10px; padding: 12px 14px;
+}
+.pdf-dl-share { background: var(--btn); color: var(--btn-fg); }
+.pdf-dl-close {
+  border: none; background: none; font-size: 20px; cursor: pointer;
+  color: var(--btn-fg); opacity: .6; padding: 4px 6px;
+}
