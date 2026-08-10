@@ -13,5 +13,11 @@
     "username": "test",
     "password": "test456",
     "expire_date": "2025/10/26"
+  },
+  {
+    "username": "c2",
+    "password": "wlkq",
+    "expire_date": "2027/08/01",
+    "banks": ["C2"]
   }
 ]
