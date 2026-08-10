@@ -1565,6 +1565,29 @@ function sharePDF(blob, filename) {
 }
 
 /* 把一段排版好的内容（隐藏容器内）渲染成多页 PDF */
+/* 微信里打开时：blob/data 文件下载都会被微信拦死，
+   改成把 PDF 每一页显示成图片，用户长按保存到相册 */
+function showPdfImagesOverlay(pages, filename) {
+  var old = document.querySelector('.pdf-img-overlay');
+  if (old) old.remove();
+  var ov = el('div', 'pdf-img-overlay');
+  var tip = el('p', 'tip',
+    '微信里不能直接下载文件（' + filename + '，共' + pages.length + '页）：\n' +
+    '① 长按下面每张图片 → 保存到手机；\n' +
+    '② 想要 PDF 文件：点右上角 ··· → 在浏览器打开，再重新导出。');
+  ov.appendChild(tip);
+  pages.forEach(function (p) {
+    var im = el('img');
+    im.src = p;
+    ov.appendChild(im);
+  });
+  var close = el('button', 'pdf-img-close', '× 关闭');
+  close.addEventListener('click', function () { ov.remove(); });
+  ov.appendChild(close);
+  document.body.appendChild(ov);
+  toast('已生成图片版，长按图片保存', 3500);
+}
+
 function exportDomToPDF(dom, filename, scale) {
   if (!window.jspdf || !window.html2canvas) { toast('PDF 组件未加载，请检查网络后刷新'); return; }
   toast('正在生成PDF…', 30000);
@@ -1578,6 +1601,8 @@ function exportDomToPDF(dom, filename, scale) {
     var pxPerMm = canvas.width / imgW;
     var pagePxH = Math.floor(277 * pxPerMm);
     var y = 0, page = 0;
+    var pageImgs = [];
+    var isWechat = /MicroMessenger/i.test(navigator.userAgent);
     while (y < canvas.height) {
       var h = Math.min(pagePxH, canvas.height - y);
       var pc = document.createElement('canvas');
@@ -1586,11 +1611,17 @@ function exportDomToPDF(dom, filename, scale) {
       ctx.fillStyle = '#FFF5E1';
       ctx.fillRect(0, 0, pc.width, pc.height);
       ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+      var dataUrl = pc.toDataURL('image/jpeg', 0.92);
+      if (isWechat) pageImgs.push(dataUrl);
       if (page > 0) pdf.addPage();
-      pdf.addImage(pc.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, imgW, h / pxPerMm);
+      pdf.addImage(dataUrl, 'JPEG', margin, margin, imgW, h / pxPerMm);
       y += h; page++;
     }
-    sharePDF(pdf.output('blob'), filename);
+    if (isWechat) {
+      showPdfImagesOverlay(pageImgs, filename);
+    } else {
+      sharePDF(pdf.output('blob'), filename);
+    }
   }).catch(function () { holder.innerHTML = ''; toast('PDF 生成失败，请重试'); });
 }
 
