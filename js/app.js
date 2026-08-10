@@ -427,7 +427,7 @@ function renderAnnBar(container, imgPath) {
 /* ---------- OSS 在线更新：每个题库一个 bucket，按账户权限更新对应题库 ----------
    A1→mathlan-a1 … C3→mathlan-c3，每个 bucket 里放 mathlan.zip（只含该题库内容）；
    密码器账户可更新全部9个题库，特殊账户只能更新 banks 里指定的题库 */
-var OSS_CONTENT_V = 3;   // v3 起改为分题库 bucket + 分题库版本记录
+var OSS_CONTENT_V = 4;   // v4 起只合并本桶对应题库的数据（修复总包互相覆盖）
 var OSS_META_KEY = 'mathlan_oss_meta_v2';
 
 function ossZipUrl(bid) {
@@ -560,7 +560,18 @@ function ossUpdate() {
         latest.push(bid); next(); return null;
       }
       return downloadBank(bid).then(function (res) {
-        if (res.qData) qMerged = Object.assign(qMerged || loadQCache() || {}, res.qData);
+        // 只取本桶属于自己题库的数据（桶里若放了总包，其他题库内容一律忽略，
+        // 防止后下载的桶用空数据把别的题库覆盖掉）
+        if (res.qData && res.qData[bid]) {
+          if (!qMerged) {
+            qMerged = loadQCache() || {};
+            if (!qMerged || !Object.keys(qMerged).length) {
+              qMerged = {};
+              BANKS.forEach(function (b) { qMerged[b] = (S.questions && S.questions[b]) || []; });
+            }
+          }
+          qMerged[bid] = res.qData[bid];
+        }
         if (res.annData) annsNew = Object.assign(annsNew || {}, res.annData);
         clearBankProgress(bid);
         saveOssMeta(bid, res.size, meta.lastModified);
@@ -1503,15 +1514,28 @@ function sharePDF(blob, filename) {
     rd.readAsDataURL(blob);
     return;
   }
-  // 浏览器：先按老方式自动下载（用户手势内生成失败时才需要悬浮条），同时弹悬浮条保底
+  // 浏览器：1) 先试系统分享（老版本就是这条路，可保存可转发）
+  var shared = false;
+  var shareFile = null;
+  try {
+    shareFile = new File([blob], filename, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+      navigator.share({ files: [shareFile], title: filename }).catch(function () {});
+      shared = true;
+    }
+  } catch (e) {}
+  // 2) 不支持分享时，按老方式自动下载
   var url = URL.createObjectURL(blob);
-  var auto = document.createElement('a');
-  auto.href = url;
-  auto.download = filename;
-  document.body.appendChild(auto);
-  auto.click();
-  auto.remove();
-  toast('PDF 已生成，若未自动保存请点下方按钮', 4000);
+  if (!shared) {
+    var auto = document.createElement('a');
+    auto.href = url;
+    auto.download = filename;
+    document.body.appendChild(auto);
+    auto.click();
+    auto.remove();
+  }
+  toast(shared ? 'PDF 已生成，可在分享面板里保存' : 'PDF 已生成，若未自动保存请点下方按钮', 4000);
+  // 3) 悬浮条保底：手动保存 / 在线打开 / 转发
   var old = document.querySelector('.pdf-dl-bar');
   if (old) old.remove();
   var bar = el('div', 'pdf-dl-bar');
@@ -1524,16 +1548,13 @@ function sharePDF(blob, filename) {
   open.target = '_blank';
   open.rel = 'noopener';
   bar.appendChild(open);
-  try {
-    var file = new File([blob], filename, { type: 'application/pdf' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      var s = el('button', 'pdf-dl-btn pdf-dl-share', '转发');
-      s.addEventListener('click', function () {
-        navigator.share({ files: [file], title: filename }).catch(function () {});
-      });
-      bar.appendChild(s);
-    }
-  } catch (e) {}
+  if (shareFile) {
+    var s = el('button', 'pdf-dl-btn pdf-dl-share', '转发');
+    s.addEventListener('click', function () {
+      navigator.share({ files: [shareFile], title: filename }).catch(function () {});
+    });
+    bar.appendChild(s);
+  }
   var close = el('button', 'pdf-dl-close', '×');
   close.addEventListener('click', function () { bar.remove(); URL.revokeObjectURL(url); });
   bar.appendChild(close);
