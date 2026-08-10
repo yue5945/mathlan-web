@@ -36,6 +36,7 @@ img { user-select: none; -webkit-user-drag: none; }
   box-shadow: 0 2px 0 rgba(47,79,79,.15);
 }
 .btn:active { transform: translateY(1px); box-shadow: none; opacity: .92; }
+.btn.locked { opacity: .35; }
 .btn-primary { background: #ff8c5a; color: #fff; }
 .btn-danger { background: var(--incorrect); color: #fff; }
 .btn-big { padding: 15px; font-size: 17px; }
