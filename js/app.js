@@ -1523,13 +1523,13 @@ function sharePDF(blob, filename) {
 }
 
 /* 把一段排版好的内容（隐藏容器内）渲染成多页 PDF */
-function exportDomToPDF(dom, filename) {
+function exportDomToPDF(dom, filename, scale) {
   if (!window.jspdf || !window.html2canvas) { toast('PDF 组件未加载，请检查网络后刷新'); return; }
   toast('正在生成PDF…', 30000);
   var holder = $('pdf-holder');
   holder.innerHTML = '';
   holder.appendChild(dom);
-  html2canvas(dom, { scale: 2, backgroundColor: '#FFF5E1', logging: false }).then(function (canvas) {
+  html2canvas(dom, { scale: scale || 2, backgroundColor: '#FFF5E1', logging: false }).then(function (canvas) {
     holder.innerHTML = '';
     var pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
     var margin = 10, imgW = 190;
@@ -1573,15 +1573,39 @@ function exportStatsPDF() {
   exportDomToPDF(rep, '数问阑珊-统计报告-用户' + uid + '.pdf');
 }
 
+/* 把图片缩小到适合 PDF 的宽度（原图太大时安卓画布放不下，会整页空白） */
+function pdfReadyImage(url, maxW) {
+  return new Promise(function (res) {
+    if (!url) { res(''); return; }
+    var im = new Image();
+    im.onload = function () {
+      try {
+        var w = im.naturalWidth, h = im.naturalHeight;
+        if (!w) { res(''); return; }
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        var cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(im, 0, 0, w, h);
+        res(cv.toDataURL('image/jpeg', 0.9));
+      } catch (e) { res(''); }
+    };
+    im.onerror = function () { res(''); };
+    im.src = url;
+  });
+}
+
 function exportWrongbookPDF() {
   if (deniedForAccount0()) return;
   var list = collectWrongRecords();
   if (!list.length) { toast('当前没有错题，无需导出'); return; }
+  var overN = list.length > 30;
+  if (overN) list = list.slice(0, 30);   // 太多画布放不下，先导出前30道
   if (!window.jspdf || !window.html2canvas) { toast('PDF 组件未加载，请检查网络后刷新'); return; }
   toast('正在整理错题和图片…', 30000);
   var rep = el('div', 'pdf-report');
   rep.appendChild(el('h1', '', '数问阑珊 · 错题本'));
-  rep.appendChild(el('p', 'pdf-sub', '用户 ' + S.currentUser + ' · 共 ' + list.length + ' 道错题 · 生成时间 ' + fmtTime(Date.now())));
+  rep.appendChild(el('p', 'pdf-sub', '用户 ' + S.currentUser + ' · 共 ' + list.length + ' 道错题' +
+    (overN ? '（错题较多，本次导出前30道）' : '') + ' · 生成时间 ' + fmtTime(Date.now())));
   var chain = Promise.resolve();
   list.forEach(function (item, idx) {
     chain = chain.then(function () {
@@ -1591,7 +1615,9 @@ function exportWrongbookPDF() {
       var imgPath = item.record.answer_image || '';
       if (!imgPath) { sec.appendChild(el('p', 'pdf-line', '（无答案图片）')); return null; }
       return getCompositedDataURL(imgPath).then(function (url) {
-        if (!url) { sec.appendChild(el('p', 'pdf-line', '（图片不在本机，请先点「更新」）')); return null; }
+        return pdfReadyImage(url, 1200);
+      }).then(function (url) {
+        if (!url) { sec.appendChild(el('p', 'pdf-line', '（图片没下载到本机，请先点「更新」下载完整题库）')); return null; }
         var im = el('img', 'pdf-img');
         im.src = url;
         sec.appendChild(im);
@@ -1612,7 +1638,7 @@ function exportWrongbookPDF() {
       });
     }
     rep.appendChild(el('p', 'pdf-foot', '数问阑珊 MathLan · 开发者微信：mathlan3'));
-    exportDomToPDF(rep, '数问阑珊-错题本-用户' + S.currentUser + '.pdf');
+    exportDomToPDF(rep, '数问阑珊-错题本-用户' + S.currentUser + '.pdf', 1);
   });
 }
 
