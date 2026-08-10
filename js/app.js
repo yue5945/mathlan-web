@@ -1282,6 +1282,17 @@ var TESS_LANG_PATH = 'https://yue5945.github.io/mathlan-web/tessdata';
 var AI_OCR_MAX = 15;        // 单次最多分析 15 道错题（太多会很慢）
 var AI_OCR_TIMEOUT = 45000; // 单张图识别最长 45 秒
 
+/* 创建识别引擎，带超时保护（超时/失败会 reject，由调用方换备用通道）。
+   langPath 传空串则用引擎默认地址（jsdelivr 官方数据，约20MB） */
+function createOcrWorker(langPath, timeoutMs) {
+  var opts = {};
+  if (langPath) opts.langPath = langPath;
+  var p = Tesseract.createWorker(['chi_sim', 'eng'], 1, opts);
+  return Promise.race([p, new Promise(function (_res, rej) {
+    setTimeout(function () { rej(new Error('ocr worker timeout')); }, timeoutMs);
+  })]);
+}
+
 /* 把任意图片来源统一转成 data: 地址（识别引擎在安卓 file:// 下读不了相对路径） */
 function ensureDataURL(src) {
   return new Promise(function (res) {
@@ -1356,10 +1367,14 @@ function aiAnalyzeWrongbook() {
   var over = totalAll > AI_OCR_MAX;
   if (over) items = items.slice(0, AI_OCR_MAX);
 
-  box.textContent = '首次使用正在下载图片识别数据（约4MB，以后不用再下）…';
+  box.textContent = '首次使用正在下载图片识别数据（约4MB，以后不用再下）…\n（如果网络慢，1分半后会自动换备用通道）';
 
   var worker = null;
-  Tesseract.createWorker(['chi_sim', 'eng'], 1, { langPath: TESS_LANG_PATH }).then(function (w) {
+  /* 主通道（题库同址，数据小）；卡住或失败自动换备用通道（境外CDN，数据大但稳定） */
+  createOcrWorker(TESS_LANG_PATH, 90000).catch(function () {
+    box.textContent = '主通道较慢，正在换备用通道下载识别数据（约20MB，仅首次）…';
+    return createOcrWorker('', 240000);
+  }).then(function (w) {
     worker = w;
     var results = [];
     var seq = Promise.resolve();
@@ -1412,7 +1427,7 @@ function aiAnalyzeWrongbook() {
       box.textContent = (over ? '（错题较多，本次分析前 ' + AI_OCR_MAX + ' 道）\n\n' : '') + text;
     });
   }).catch(function () {
-    box.textContent = 'AI 分析失败，请检查网络后重试。';
+    box.textContent = 'AI 分析失败：识别组件没能加载成功。\n请切换到稳定的网络（Wi-Fi 或手机流量）后，点一下返回再进来重试。';
   }).then(function () {
     if (worker) worker.terminate();
   });
