@@ -700,13 +700,27 @@ function bankState(uid, bid) {
 function renderBankGrid() {
   var grid = $('bank-grid');
   grid.innerHTML = '';
+  var allowed = allowedBanks();
   BANKS.forEach(function (bid) {
+    var ok = !allowed || allowed.indexOf(bid) >= 0;
     var st = bankState(S.currentUser, bid);
-    var b = el('button', 'btn' + (st ? ' ' + st : ''),
+    var b = el('button', 'btn' + (st ? ' ' + st : '') + (ok ? '' : ' locked'),
       bid + (st === 'ok' ? ' ✓' : st === 'bad' ? ' ?' : ''));
-    b.addEventListener('click', function () { openQuiz(bid); });
+    b.addEventListener('click', function () {
+      if (!ok) { toast('该账户只能打开 ' + allowed.join('、') + ' 题库的题目', 3000); return; }
+      openQuiz(bid);
+    });
     grid.appendChild(b);
   });
+}
+
+/* 当前账户允许打开的题库（无限制返回 null，账户 c2 只返回 ['C2']） */
+function allowedBanks() {
+  var sus = S.specialUsers || [];
+  for (var i = 0; i < sus.length; i++) {
+    if (sus[i].username === S.account && sus[i].banks) return sus[i].banks;
+  }
+  return null;
 }
 
 /* ---------- 答题 ---------- */
@@ -722,6 +736,8 @@ function answerOf(q) {
 }
 
 function openQuiz(bid) {
+  var allowed = allowedBanks();
+  if (allowed && allowed.indexOf(bid) < 0) { toast('该账户只能打开 ' + allowed.join('、') + ' 题库的题目', 3000); return; }
   if (!S.questionsLoaded) { toast('题库加载中，请稍候…'); loadQuestions(false); return; }
   S.bid = bid;
   var ud = ensureRemaining(S.currentUser, bid);
@@ -1729,7 +1745,8 @@ function boot() {
     return [
       { username: '0', password: '0', expire_date: '9999/12/31' },
       { username: 'admin', password: 'admin123', expire_date: '2025/10/26' },
-      { username: 'test', password: 'test456', expire_date: '2025/10/26' }
+      { username: 'test', password: 'test456', expire_date: '2025/10/26' },
+      { username: 'c2', password: 'wlkq', expire_date: '2027/08/01', banks: ['C2'] }
     ];
   }).then(function (su) {
     S.specialUsers = su || [];
