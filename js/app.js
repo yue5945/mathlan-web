@@ -117,7 +117,7 @@ function applyQuestions(q) {
 
 function loadQuestions(showStatus) {
   // 已经点过「更新」的设备：本机缓存才是最新题库，绝不能用内置旧题库覆盖它
-  if (loadOssMeta() && loadQCache()) {
+  if (ossMetaHasAny() && loadQCache()) {
     if (showStatus) toast('题库已就绪');
     return Promise.resolve();
   }
@@ -424,8 +424,15 @@ function renderAnnBar(container, imgPath) {
   addBtn(anns.image, '🖼 看批注图', 'image');
 }
 
-/* ---------- OSS 在线更新：下载 mathlan.zip 并在浏览器内解压替换题库 ---------- */
-var OSS_ZIP_URL = 'https://mathlan.oss-cn-beijing.aliyuncs.com/mathlan.zip';
+/* ---------- OSS 在线更新：每个题库一个 bucket，按账户权限更新对应题库 ----------
+   A1→mathlan-a1 … C3→mathlan-c3，每个 bucket 里放 mathlan.zip（只含该题库内容）；
+   密码器账户可更新全部9个题库，特殊账户只能更新 banks 里指定的题库 */
+var OSS_CONTENT_V = 3;   // v3 起改为分题库 bucket + 分题库版本记录
+var OSS_META_KEY = 'mathlan_oss_meta_v2';
+
+function ossZipUrl(bid) {
+  return 'https://mathlan-' + bid.toLowerCase() + '.oss-cn-beijing.aliyuncs.com/mathlan.zip';
+}
 
 function fetchBinRetry(url, tries, delayMs) {
   return fetch(url, { cache: 'no-store' }).then(function (r) {
@@ -438,25 +445,27 @@ function fetchBinRetry(url, tries, delayMs) {
   });
 }
 
-/* ---------- 版本识别：先对比 OSS 文件的大小和时间，相同就不下载 ---------- */
-var OSS_META_KEY = 'mathlan_oss_meta_v1';
-/* 内容格式版本：v2 起更新包会下载批注文件；本机记录缺这个字段时，
-   即使 OSS 文件没变也要重新下载一次，把批注补齐 */
-var OSS_CONTENT_V = 2;
-
-function saveOssMeta(size, lastModified) {
-  try {
-    localStorage.setItem(OSS_META_KEY, JSON.stringify({
-      size: size, lastModified: lastModified, localTime: Date.now(), v: OSS_CONTENT_V
-    }));
-  } catch (e) {}
-}
-
+/* ---------- 版本识别：每个题库分别记录 OSS 文件的大小和时间 ---------- */
 function loadOssMeta() {
   try {
     var s = localStorage.getItem(OSS_META_KEY);
     return s ? JSON.parse(s) : null;
   } catch (e) { return null; }
+}
+
+function saveOssMeta(bid, size, lastModified) {
+  try {
+    var m = loadOssMeta() || { v: OSS_CONTENT_V, banks: {} };
+    m.v = OSS_CONTENT_V;
+    if (!m.banks) m.banks = {};
+    m.banks[bid] = { size: size, lastModified: lastModified, localTime: Date.now() };
+    localStorage.setItem(OSS_META_KEY, JSON.stringify(m));
+  } catch (e) {}
+}
+
+function ossMetaHasAny() {
+  var m = loadOssMeta();
+  return !!(m && m.banks && Object.keys(m.banks).length);
 }
 
 function fmtTime(t) {
@@ -469,12 +478,18 @@ function refreshUpdateTimeLabel() {
   var el = $('update-time-label');
   if (!el) return;
   var m = loadOssMeta();
-  el.textContent = m ? ('题库更新于 ' + fmtTime(m.localTime)) : '';
+  var latest = 0;
+  if (m && m.banks) {
+    Object.keys(m.banks).forEach(function (b) {
+      if (m.banks[b].localTime > latest) latest = m.banks[b].localTime;
+    });
+  }
+  el.textContent = latest ? ('题库更新于 ' + fmtTime(latest)) : '';
 }
 
-/* 用极小流量（只要前1个字节）读取 OSS 文件的大小和最后修改时间 */
-function checkOssVersion() {
-  return fetch(OSS_ZIP_URL + '?t=' + Date.now(), {
+/* 用极小流量（只要前1个字节）读取某个题库 OSS 文件的大小和最后修改时间 */
+function checkBankVersion(bid) {
+  return fetch(ossZipUrl(bid) + '?t=' + Date.now(), {
     headers: { Range: 'bytes=0-0' }, cache: 'no-store'
   }).then(function (r) {
     if (r.status !== 206 && !r.ok) throw new Error('meta ' + r.status);
@@ -485,9 +500,10 @@ function checkOssVersion() {
   });
 }
 
-function downloadAndApply(meta) {
-  toast('发现新版本，正在下载…', 30000);
-  return fetchBinRetry(OSS_ZIP_URL + '?t=' + Date.now(), 3, 1000)
+/* 下载并解压一个题库的更新包，返回 {size, qData, annData}（媒体文件直接存本机） */
+function downloadBank(bid) {
+  toast('正在下载 ' + bid + ' 题库…', 60000);
+  return fetchBinRetry(ossZipUrl(bid) + '?t=' + Date.now(), 3, 1000)
     .then(function (buf) {
       var size = buf.byteLength;
       return JSZip.loadAsync(buf).then(function (zip) {
@@ -506,43 +522,79 @@ function downloadAndApply(meta) {
             jobs.push(file.async('blob').then(function (b) { return idbSet('img:' + rel, b); }));
           }
         });
-        return idbClearImages().then(function () { return Promise.all(jobs); }).then(function () {
-          if (qData) {
-            applyQuestions(qData);
-            saveQCache(qData);
-            // 与电脑版一致：更新后清空本机答题进度，旧题一律不留
-            try { localStorage.removeItem(STORE_KEY); } catch (e) {}
-            S.progress = blankProgress();
-            saveProgress();
-            S.bid = null;
-            S.bidQuestions = [];
-            renderBankGrid();
-          }
-          if (annData) { saveAnns(annData); S.anns = annData; }
-          saveOssMeta(size, meta && meta.lastModified ? meta.lastModified : '');
-          refreshUpdateTimeLabel();
-          toast('更新完成 ✅ 题库更新于 ' + fmtTime(Date.now()), 3500);
+        return Promise.all(jobs).then(function () {
+          return { size: size, qData: qData, annData: annData };
         });
       });
     });
 }
 
+/* 更新某个题库后，只清空该题库的本机答题进度，其他题库不动 */
+function clearBankProgress(bid) {
+  if (!S.progress) return;
+  Object.keys(S.progress).forEach(function (u) {
+    if (S.progress[u] && S.progress[u][bid]) {
+      S.progress[u][bid] = { remaining: [], history: [] };
+    }
+  });
+}
+
 function ossUpdate() {
   if (typeof JSZip === 'undefined') { toast('更新组件缺失，请检查网络后刷新'); loadQuestions(false); return; }
-  toast('正在检查更新…');
-  checkOssVersion().then(function (meta) {
-    var local = loadOssMeta();
-    // OSS 文件的大小和时间与本机记录完全一致、且内容格式也是新版 → 已是最新，不下载
-    if (local && local.v === OSS_CONTENT_V && meta.lastModified && local.lastModified === meta.lastModified &&
-        (!meta.size || !local.size || local.size === meta.size)) {
-      toast('您的题库已是最新版 ✅', 3000);
-      return null;
+  // 无限制账户（密码器生成）更新全部9个题库；特殊账户只更新自己的题库
+  var banks = allowedBanks() || BANKS.slice();
+  var updated = [], latest = [], failed = [];
+  var qMerged = null, annsNew = null;
+  var i = 0;
+
+  function next() {
+    if (i >= banks.length) { finish(); return; }
+    var bid = banks[i]; i++;
+    toast('正在检查 ' + bid + ' 题库（' + i + '/' + banks.length + '）…', 60000);
+    checkBankVersion(bid).then(function (meta) {
+      var m = loadOssMeta();
+      var local = m && m.banks && m.banks[bid];
+      // OSS 文件的大小和时间与本机记录完全一致、且内容格式也是新版 → 已是最新，不下载
+      if (local && m.v === OSS_CONTENT_V && meta.lastModified && local.lastModified === meta.lastModified &&
+          (!meta.size || !local.size || local.size === meta.size)) {
+        latest.push(bid); next(); return null;
+      }
+      return downloadBank(bid).then(function (res) {
+        if (res.qData) qMerged = Object.assign(qMerged || loadQCache() || {}, res.qData);
+        if (res.annData) annsNew = Object.assign(annsNew || {}, res.annData);
+        clearBankProgress(bid);
+        saveOssMeta(bid, res.size, meta.lastModified);
+        updated.push(bid);
+        next();
+      });
+    }).catch(function () { failed.push(bid); next(); });
+  }
+
+  function finish() {
+    if (qMerged) { applyQuestions(qMerged); saveQCache(qMerged); }
+    if (annsNew) {
+      var all = Object.assign({}, S.anns, annsNew);
+      saveAnns(all); S.anns = all;
     }
-    return downloadAndApply(meta);
-  }).catch(function () {
-    // 版本识别失败时仍尝试完整下载更新
-    downloadAndApply(null).catch(function () { toast('更新失败，请检查网络后重试', 4000); });
-  });
+    if (updated.length) {
+      S.bid = null; S.bidQuestions = [];
+      saveProgress(); renderBankGrid();
+    }
+    refreshUpdateTimeLabel();
+    var parts = [];
+    if (updated.length) parts.push('已更新 ' + updated.join('、'));
+    if (latest.length) parts.push(latest.join('、') + ' 已是最新版');
+    if (failed.length) parts.push(failed.join('、') + ' 失败（请检查网络后重试）');
+    if (failed.length && !updated.length && !latest.length) {
+      toast('更新失败，请检查网络后重试', 4000);
+    } else if (updated.length) {
+      toast('更新完成 ✅ ' + parts.join('；'), 5000);
+    } else {
+      toast('您的题库已是最新版 ✅' + (failed.length ? '；' + parts.join('；') : ''), 4000);
+    }
+  }
+
+  next();
 }
 
 function blankProgress() {
@@ -1746,7 +1798,15 @@ function boot() {
       { username: '0', password: '0', expire_date: '9999/12/31' },
       { username: 'admin', password: 'admin123', expire_date: '2025/10/26' },
       { username: 'test', password: 'test456', expire_date: '2025/10/26' },
-      { username: 'c2', password: 'wlkq', expire_date: '2027/08/01', banks: ['C2'] }
+      { username: 'a1', password: 'qVnRm0', expire_date: '2027/08/31', banks: ['A1'] },
+      { username: 'a2', password: 'xtb1T0', expire_date: '2027/08/31', banks: ['A2'] },
+      { username: 'a3', password: 'mm6tjB', expire_date: '2027/08/31', banks: ['A3'] },
+      { username: 'b1', password: 'XOc5Kn', expire_date: '2027/08/31', banks: ['B1'] },
+      { username: 'b2', password: '5allGO', expire_date: '2027/08/31', banks: ['B2'] },
+      { username: 'b3', password: 'i5sKp3', expire_date: '2027/08/31', banks: ['B3'] },
+      { username: 'c1', password: 'MY86dn', expire_date: '2027/08/31', banks: ['C1'] },
+      { username: 'c2', password: 'r2hoQS', expire_date: '2027/08/31', banks: ['C2'] },
+      { username: 'c3', password: 'n6ANi7', expire_date: '2027/08/31', banks: ['C3'] }
     ];
   }).then(function (su) {
     S.specialUsers = su || [];
