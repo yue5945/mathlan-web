@@ -282,8 +282,8 @@ img { user-select: none; -webkit-user-drag: none; }
 
 /* PDF 生成后的悬浮下载条（浏览器里自动下载会被拦截，改为用户亲手点） */
 .pdf-dl-bar {
-  position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; z-index: 80;
+  position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; z-index: 100;
   background: #fffdf7; border: 1px solid var(--line); border-radius: 14px;
   padding: 10px 12px; box-shadow: 0 6px 20px rgba(47,79,79,.25);
   max-width: 92vw;
