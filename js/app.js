@@ -1483,16 +1483,9 @@ function getCompositedDataURL(path) {
   });
 }
 
-/* 保存/分享：浏览器优先调系统分享（可转发微信），其次本机对象地址下载；
-   安卓 APP（file://）走 data: 地址，由外壳保存到「下载」文件夹 */
+/* 保存/分享：安卓 APP（file://）走 data: 地址，由外壳保存到「下载」文件夹；
+   浏览器里弹一个悬浮按钮，用户亲手点（自动下载会被浏览器拦截） */
 function sharePDF(blob, filename) {
-  try {
-    var file = new File([blob], filename, { type: 'application/pdf' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file], title: filename }).catch(function () {});
-      return;
-    }
-  } catch (e) {}
   if (location.protocol === 'file:') {
     var rd = new FileReader();
     rd.onload = function () {
@@ -1508,18 +1501,34 @@ function sharePDF(blob, filename) {
       toast('PDF 已生成，可在「下载」文件夹查看', 3200);
     };
     rd.readAsDataURL(blob);
-  } else {
-    // 浏览器：对象地址下载，稳定可靠
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 8000);
-    toast('PDF 已开始下载', 3200);
+    return;
   }
+  // 浏览器：悬浮下载条
+  var old = document.querySelector('.pdf-dl-bar');
+  if (old) old.remove();
+  var url = URL.createObjectURL(blob);
+  var bar = el('div', 'pdf-dl-bar');
+  var a = el('a', 'pdf-dl-btn', '⬇ PDF 已生成 · 点我保存');
+  a.href = url;
+  a.download = filename;
+  bar.appendChild(a);
+  try {
+    var file = new File([blob], filename, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      var s = el('button', 'pdf-dl-btn pdf-dl-share', '转发（微信等）');
+      s.addEventListener('click', function () {
+        navigator.share({ files: [file], title: filename }).catch(function () {});
+      });
+      bar.appendChild(s);
+    }
+  } catch (e) {}
+  var close = el('button', 'pdf-dl-close', '×');
+  close.addEventListener('click', function () { bar.remove(); URL.revokeObjectURL(url); });
+  bar.appendChild(close);
+  document.body.appendChild(bar);
+  setTimeout(function () {
+    if (bar.parentNode) { bar.remove(); URL.revokeObjectURL(url); }
+  }, 120000);
 }
 
 /* 把一段排版好的内容（隐藏容器内）渲染成多页 PDF */
