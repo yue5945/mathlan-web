@@ -227,6 +227,9 @@ img { user-select: none; -webkit-user-drag: none; }
   border: 1px solid var(--line); border-radius: 10px; background: #fffdf7;
 }
 
+/* 应用菜单：24点 / 数独 两个入口 */
+.app-menu .btn-big { font-size: 20px; letter-spacing: 6px; padding: 18px 0; }
+
 /* ---------- 功能按钮九宫格（3×3，尺寸向题库按钮看齐） ---------- */
 .func-grid .btn { font-size: 17px; padding: 16px 0; }
 
