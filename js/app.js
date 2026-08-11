@@ -1115,11 +1115,11 @@ function openMultiStats() {
   showPage('page-stats');
 }
 
-/* ---------- 打开「算算」网页（安卓 APP 由外壳接管跳转到系统浏览器） ---------- */
-function openSuansuan() {
+/* ---------- 打开外部网页（安卓 APP 由外壳接管跳转到系统浏览器） ---------- */
+function openExt(url) {
   try {
     var a = document.createElement('a');
-    a.href = 'https://yue5945.github.io/suansuan/';
+    a.href = url;
     a.target = '_blank';
     a.rel = 'noopener';
     document.body.appendChild(a);
@@ -1127,6 +1127,7 @@ function openSuansuan() {
     a.remove();
   } catch (e) { toast('打开失败，请稍后再试'); }
 }
+function openSuansuan() { openExt('https://yue5945.github.io/suansuan/'); }
 
 /* ---------- 统计（统一页：总览 + 明细 + 分析建议 + 全员概览 + 导出PDF） ---------- */
 function pct(x) { return (x * 100).toFixed(1) + '%'; }
@@ -1862,7 +1863,7 @@ function bindEvents() {
         try { ossUpdate(); } catch (e) { toast('更新失败，请稍后再试'); }
       }
       else if (act === 'suansuan') openSuansuan();
-      else if (act === 'app') toast('请在电脑端使用此功能');
+      else if (act === 'app') $('app-overlay').classList.add('show');
     });
   }
 
@@ -1892,6 +1893,9 @@ function bindEvents() {
   $('answer-close').addEventListener('click', function () { $('answer-overlay').classList.remove('show'); });
   $('answer-img').addEventListener('click', function () { openZoom(this.src); });
   $('help-close').addEventListener('click', function () { $('help-overlay').classList.remove('show'); });
+  $('app-close').addEventListener('click', function () { $('app-overlay').classList.remove('show'); });
+  $('app-24').addEventListener('click', function () { openExt('https://24.mathlan.cn'); });
+  $('app-sudoku').addEventListener('click', function () { openExt('https://sudoku.mathlan.cn'); });
   $('media-close').addEventListener('click', closeMediaOverlay);
   $('audio-bar-close').addEventListener('click', closeAudioBar);
   $('input-ok').addEventListener('click', function () { closeInput(true); });
