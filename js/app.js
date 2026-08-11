@@ -1127,7 +1127,7 @@ function openExt(url) {
     a.remove();
   } catch (e) { toast('打开失败，请稍后再试'); }
 }
-function openSuansuan() { openExt('https://yue5945.github.io/suansuan/'); }
+function openSuansuan() { openExt('http://suansuan.mathlan.cn/'); }
 
 /* ---------- 统计（统一页：总览 + 明细 + 分析建议 + 全员概览 + 导出PDF） ---------- */
 function pct(x) { return (x * 100).toFixed(1) + '%'; }
