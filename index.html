@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="数问阑珊">
 <link rel="apple-touch-icon" href="icon-180.png">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body>
 
@@ -191,11 +191,25 @@
     <h3>按钮颜色</h3>
     <p>绿色 ✓：该题库已全部答对<br>红色 ?：最近答题有错误<br>默认色：未完成</p>
     <h3>功能说明</h3>
-    <p>· 查看：按题库浏览答错的题目与答案图，可删除错误记录<br>· 统计：答题总览、各题库明细、分析与学习建议，可导出PDF保存/转发<br>· 错题本：汇总所有题库的错题与答案图，可AI分析薄弱点、导出PDF保存/转发<br>· 更新：刷新到最新题库<br>· ䷿：打开「算算」网页<br>· 批注：题目/答案图片下方出现 ▶ 按钮时，点击可听音频批注、看批注视频/图片<br>· 图片放大：点击图片后双指捏合缩放，也可用按钮缩放、旋转<br>· 应用：请在电脑端使用</p>
+    <p>· 查看：按题库浏览答错的题目与答案图，可删除错误记录<br>· 统计：答题总览、各题库明细、分析与学习建议，可导出PDF保存/转发<br>· 错题本：汇总所有题库的错题与答案图，可AI分析薄弱点、导出PDF保存/转发<br>· 更新：刷新到最新题库<br>· ䷿：打开「算算」网页<br>· 批注：题目/答案图片下方出现 ▶ 按钮时，点击可听音频批注、看批注视频/图片<br>· 图片放大：点击图片后双指捏合缩放，也可用按钮缩放、旋转<br>· 应用：打开 24点 / 数独 网页</p>
     <h3>答题数据</h3>
     <p>答题进度保存在本机，卸载或清除数据前请注意。</p>
     <h3>开发者</h3>
     <p>开发者微信：mathlan3</p>
+  </div>
+</div>
+
+<!-- 应用入口：24点 / 数独 -->
+<div class="overlay" id="app-overlay">
+  <div class="overlay-head">
+    <span>应用</span>
+    <button class="btn btn-small" id="app-close">关闭</button>
+  </div>
+  <div class="overlay-body">
+    <div class="input-dialog app-menu">
+      <button class="btn btn-primary btn-big" id="app-24">24点</button>
+      <button class="btn btn-primary btn-big" id="app-sudoku">数独</button>
+    </div>
   </div>
 </div>
 
@@ -231,6 +245,6 @@
 <script src="js/jspdf.umd.min.js"></script>
 <script src="js/html2canvas.min.js"></script>
 <script src="js/tesseract.min.js"></script>
-<script src="js/app.js?v=24"></script>
+<script src="js/app.js?v=25"></script>
 </body>
 </html>
